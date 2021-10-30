@@ -3,6 +3,7 @@ package file
 import (
 	"encoding/binary"
 	"fmt"
+	"io"
 	"os"
 	"time"
 
@@ -25,7 +26,7 @@ func (f *File) Write(x, z int, b []byte) (err error) {
 
 	buf := f.compress(b)
 	size := uint((len(b) + 5) / sectionSize)
-	if size > 256 {
+	if size > 255 {
 		panic("TODO")
 	}
 
@@ -36,7 +37,7 @@ func (f *File) Write(x, z int, b []byte) (err error) {
 	var fileOffset = int64(offset) * sectionSize
 
 	if !hasSpace {
-		if fileOffset, err = f.f.Seek(0, os.SEEK_END); err != nil {
+		if fileOffset, err = f.f.Seek(0, io.SeekEnd); err != nil {
 			return err
 		}
 		for i := 0; i < int(size); i++ {
