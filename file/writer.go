@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"os"
+	"time"
 
 	"github.com/klauspost/compress/zlib"
 	"github.com/valyala/bytebufferpool"
@@ -18,6 +19,10 @@ type File struct {
 }
 
 func (f *File) Write(x, z int, b []byte) (err error) {
+	if x < 0 || z < 0 || x > 31 || z > 31 {
+		return fmt.Errorf("anvil/file: invalid chunk position")
+	}
+
 	buf := f.compress(b)
 	size := uint((len(b) + 5) / sectionSize)
 	if size > 256 {
@@ -34,19 +39,45 @@ func (f *File) Write(x, z int, b []byte) (err error) {
 		if fileOffset, err = f.f.Seek(0, os.SEEK_END); err != nil {
 			return err
 		}
-
+		for i := 0; i < int(size); i++ {
+			f.used.Set(f.used.Len())
+		}
 	}
 
-	n, err := f.f.WriteAt(buf.B, fileOffset)
-	if n != buf.Len() {
-		return fmt.Errorf("anvil/file: unexpected number of bytes written")
-	}
-	if err != nil {
+	if _, err = f.f.WriteAt(buf.B, fileOffset); err != nil {
 		return errors.Wrap("anvil/file: unable to write", err)
 	}
-
 	if err = f.f.Sync(); err != nil {
 		return errors.Wrap("anvil/file: unable to sync to disk", err)
+	}
+	bufferpool.Put(buf)
+
+	headerOffset := int64(x<<4 | z<<2)
+
+	var header [4]byte
+	binary.BigEndian.PutUint32(header[:], uint32(offset)<<8|uint32(size))
+	if _, err = f.f.WriteAt(header[:], headerOffset); err != nil {
+		return errors.Wrap("anvil/file: unable to update location", err)
+	}
+	if err = f.f.Sync(); err != nil {
+		return errors.Wrap("anvil/file: unable to sync location to disk", err)
+	}
+
+	chunk := f.header.get(x, z)
+	for i := 0; i < int(chunk.size); i++ {
+		f.used.Clear(uint(chunk.location) + uint(i))
+	}
+
+	chunk.location = uint32(offset)
+	chunk.size = uint8(size)
+	chunk.timestamp = uint32(time.Now().Unix())
+
+	binary.BigEndian.PutUint32(header[:], chunk.timestamp)
+	if _, err = f.f.WriteAt(header[:], headerOffset+sectionSize); err != nil {
+		return errors.Wrap("anvil/file: unable to update timestamp", err)
+	}
+	if err = f.f.Sync(); err != nil {
+		return errors.Wrap("anvil/file: unable to sync timestamp to disk", err)
 	}
 
 	return nil
