@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/bits-and-blooms/bitset"
+	"github.com/spf13/afero"
 	"github.com/yehan2002/errors"
 	"github.com/yehan2002/fastbytes/v2"
 )
@@ -20,6 +21,8 @@ const sectionSizeMask = sectionSize - 1
 
 var sectionPool = sync.Pool{New: func() interface{} { return &section{} }}
 var regionHeaderPool = sync.Pool{New: func() interface{} { return &header{} }}
+
+var fs afero.Fs = &afero.OsFs{}
 
 type section [sectionSize]byte
 
@@ -40,15 +43,18 @@ type chunk struct {
 // Open opens the given file
 func Open(path string) (*File, error) {
 	var fileSize int64
-	if info, err := os.Stat(path); err != nil {
+	if info, err := fs.Stat(path); err != nil {
 		if !os.IsNotExist(err) {
 			return nil, err
+		}
+		if err = createEmpty(path); err != nil {
+			return nil, errors.Wrap("anvil/file: error creating file", err)
 		}
 	} else {
 		fileSize = info.Size()
 	}
 
-	f, err := os.OpenFile(path, os.O_RDWR|os.O_CREATE, 0666)
+	f, err := fs.OpenFile(path, os.O_RDWR|os.O_CREATE, 0666)
 	if err != nil {
 		return nil, errors.Wrap("anvil/file: unable to open file", err)
 	}
@@ -59,6 +65,21 @@ func Open(path string) (*File, error) {
 	}
 
 	return &File{f: f, Reader: r}, nil
+}
+
+// createEmpty creates an empty anvil file at the given path
+func createEmpty(path string) (err error) {
+	var f afero.File
+	if f, err = fs.Create(path); err == nil {
+		if err = f.Truncate(sectionSize * 2); err == nil {
+			if err = f.Sync(); err == nil {
+				if err = f.Close(); err == nil {
+					return err
+				}
+			}
+		}
+	}
+	return
 }
 
 // NewReader creates a new anvil reader

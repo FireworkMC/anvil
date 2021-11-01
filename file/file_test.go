@@ -4,7 +4,13 @@ import (
 	"fmt"
 	"testing"
 	"time"
+
+	"github.com/spf13/afero"
 )
+
+func init() {
+	fs = afero.NewCopyOnWriteFs(afero.NewBasePathFs(&afero.OsFs{}, "../testdata"), &afero.MemMapFs{})
+}
 
 func TestA(t *testing.T) {
 	f, err := Open("../testdata/region/r.1.0.mca")
