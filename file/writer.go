@@ -8,7 +8,6 @@ import (
 
 	"github.com/klauspost/compress/zlib"
 	"github.com/spf13/afero"
-	"github.com/valyala/bytebufferpool"
 	"github.com/yehan2002/errors"
 )
 
@@ -36,13 +35,13 @@ func (f *File) Write(x, z int, b []byte) (err error) {
 		return
 	}
 
-	var buf *bytebufferpool.ByteBuffer
+	var buf *buffer
 	if buf, err = f.compress(b); err != nil {
 		return errors.Wrap("anvil/file: error compressing data", err)
 	}
-	defer bufferpool.Put(buf)
+	defer buf.Free()
 
-	size := sections(uint(len(buf.B)) + 5)
+	size := sections(uint(buf.Len()))
 
 	if size > 255 {
 		panic("TODO")
@@ -59,7 +58,10 @@ func (f *File) Write(x, z int, b []byte) (err error) {
 		}
 	}
 
-	if err = f.writeSync(buf.B, int64(offset)*sectionSize); err != nil {
+	if err = buf.WriteTo(f.f, int64(offset)*sectionSize); err != nil {
+		return errors.Wrap("anvil/file: unable to write chunk data", err)
+	}
+	if err = f.f.Sync(); err != nil {
 		return errors.Wrap("anvil/file: unable to write chunk data", err)
 	}
 
@@ -143,21 +145,16 @@ func (f *File) writeSync(p []byte, at int64) (err error) {
 
 var zeroHeader [5]byte
 
-func (f *File) compress(b []byte) (buf *bytebufferpool.ByteBuffer, err error) {
-	buf = bufferpool.Get()
-	buf.Reset()
-	_, _ = buf.Write(zeroHeader[:])
-
+func (f *File) compress(b []byte) (buf *buffer, err error) {
+	buf = &buffer{}
 	f.zlib.Reset(buf)
 	if _, err = f.zlib.Write(b); err == nil {
 		if err = f.zlib.Close(); err == nil {
-			binary.BigEndian.PutUint32(buf.B, uint32(buf.Len()-5))
-			buf.B[4] = compressionZlib
+			buf.Header(compressionZlib)
 			return buf, nil
 		}
 	}
 
-	bufferpool.Put(buf)
 	return nil, err
 }
 

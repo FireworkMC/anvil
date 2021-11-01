@@ -17,17 +17,13 @@ import (
 const chunks = 32 * 32
 
 // sectionSize the size of a section
-const sectionSize = chunks * 4
+const sectionSize = chunks * 4 // 1 << sectionShift
+const sectionShift = 12
 const sectionSizeMask = sectionSize - 1
-
-var sectionPool = sync.Pool{New: func() interface{} { return &section{} }}
-var regionHeaderPool = sync.Pool{New: func() interface{} { return &header{} }}
 
 var fs afero.Fs = &afero.OsFs{}
 
-type section [sectionSize]byte
-
-func (b *section) Free() { sectionPool.Put(b) }
+var regionHeaderPool = sync.Pool{New: func() interface{} { return &header{} }}
 
 type header [chunks]chunk
 

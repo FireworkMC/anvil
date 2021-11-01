@@ -6,13 +6,11 @@ import (
 
 	"github.com/klauspost/compress/gzip"
 	"github.com/klauspost/compress/zlib"
-	"github.com/valyala/bytebufferpool"
 )
 
 var (
-	zlibPool   = sync.Pool{}
-	gzipPool   = sync.Pool{}
-	bufferpool = bytebufferpool.Pool{}
+	zlibPool = sync.Pool{}
+	gzipPool = sync.Pool{}
 )
 
 type resetable interface{ Reset(r io.Reader) error }
