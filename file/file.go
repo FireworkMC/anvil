@@ -7,6 +7,7 @@ import (
 	"sync"
 
 	"github.com/bits-and-blooms/bitset"
+	"github.com/klauspost/compress/zlib"
 	"github.com/spf13/afero"
 	"github.com/yehan2002/errors"
 	"github.com/yehan2002/fastbytes/v2"
@@ -54,7 +55,7 @@ func Open(path string) (*File, error) {
 		fileSize = info.Size()
 	}
 
-	f, err := fs.OpenFile(path, os.O_RDWR|os.O_CREATE, 0666)
+	f, err := fs.OpenFile(path, os.O_RDWR, 0666)
 	if err != nil {
 		return nil, errors.Wrap("anvil/file: unable to open file", err)
 	}
@@ -64,7 +65,7 @@ func Open(path string) (*File, error) {
 		return nil, err
 	}
 
-	return &File{f: f, Reader: r}, nil
+	return &File{f: f, Reader: r, zlib: zlib.NewWriter(io.Discard)}, nil
 }
 
 // createEmpty creates an empty anvil file at the given path

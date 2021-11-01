@@ -7,6 +7,7 @@ import (
 	"time"
 
 	"github.com/klauspost/compress/zlib"
+	"github.com/spf13/afero"
 	"github.com/valyala/bytebufferpool"
 	"github.com/yehan2002/errors"
 )
@@ -15,15 +16,12 @@ import (
 type File struct {
 	*Reader
 	zlib *zlib.Writer
-	f    file
+	f    afero.File
 }
 
-type file interface {
-	io.ReaderAt
-	io.WriterAt
-	io.Seeker
-	io.Closer
-	Sync() error
+// sections returns the minimum number of sections to store the given number of bytes
+func sections(v uint) uint {
+	return (v + sectionSizeMask) / sectionSize
 }
 
 func (f *File) Write(x, z int, b []byte) (err error) {
@@ -31,12 +29,15 @@ func (f *File) Write(x, z int, b []byte) (err error) {
 		return fmt.Errorf("anvil/file: invalid chunk position")
 	}
 
+	// TODO: handle zero length.
+
 	var buf *bytebufferpool.ByteBuffer
 	if buf, err = f.compress(b); err != nil {
 		return errors.Wrap("anvil/file: error compressing data", err)
 	}
 
-	size := uint((len(b) + 5) / sectionSize)
+	size := sections(uint(len(buf.B)) + 5)
+
 	if size > 255 {
 		panic("TODO")
 	}
@@ -50,6 +51,13 @@ func (f *File) Write(x, z int, b []byte) (err error) {
 	if !hasSpace {
 		if fileOffset, err = f.f.Seek(0, io.SeekEnd); err != nil {
 			return err
+		}
+		offset = sections(uint(fileOffset))
+		fileOffset = int64(offset) * sectionSize
+		newSize := int64(offset+size) * sectionSize
+
+		if err = f.f.Truncate(newSize); err != nil {
+			return errors.Wrap("anvil/file: unable to grow file", err)
 		}
 	}
 
@@ -152,7 +160,7 @@ func (f *File) findSpace(size uint) (offset uint, found bool) {
 		}
 
 		next, hasSpace = f.used.NextSet(offset)
-		if next-offset >= size {
+		if hasSpace && next-offset >= size {
 			return offset, true
 		}
 
