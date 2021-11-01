@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"os"
 	"time"
 
 	"github.com/klauspost/compress/zlib"
@@ -16,7 +15,15 @@ import (
 type File struct {
 	*Reader
 	zlib *zlib.Writer
-	f    *os.File
+	f    file
+}
+
+type file interface {
+	io.ReaderAt
+	io.WriterAt
+	io.Seeker
+	io.Closer
+	Sync() error
 }
 
 func (f *File) Write(x, z int, b []byte) (err error) {
@@ -24,7 +31,11 @@ func (f *File) Write(x, z int, b []byte) (err error) {
 		return fmt.Errorf("anvil/file: invalid chunk position")
 	}
 
-	buf := f.compress(b)
+	var buf *bytebufferpool.ByteBuffer
+	if buf, err = f.compress(b); err != nil {
+		return errors.Wrap("anvil/file: error compressing data", err)
+	}
+
 	size := uint((len(b) + 5) / sectionSize)
 	if size > 255 {
 		panic("TODO")
@@ -40,62 +51,90 @@ func (f *File) Write(x, z int, b []byte) (err error) {
 		if fileOffset, err = f.f.Seek(0, io.SeekEnd); err != nil {
 			return err
 		}
-		for i := 0; i < int(size); i++ {
-			f.used.Set(f.used.Len())
-		}
 	}
 
-	if _, err = f.f.WriteAt(buf.B, fileOffset); err != nil {
-		return errors.Wrap("anvil/file: unable to write", err)
+	if err = f.writeSync(buf.B, fileOffset); err != nil {
+		return errors.Wrap("anvil/file: unable to write chunk data", err)
 	}
-	if err = f.f.Sync(); err != nil {
-		return errors.Wrap("anvil/file: unable to sync to disk", err)
-	}
+
 	bufferpool.Put(buf)
 
 	headerOffset := int64(x<<4 | z<<2)
 
 	var header [4]byte
 	binary.BigEndian.PutUint32(header[:], uint32(offset)<<8|uint32(size))
-	if _, err = f.f.WriteAt(header[:], headerOffset); err != nil {
-		return errors.Wrap("anvil/file: unable to update location", err)
-	}
-	if err = f.f.Sync(); err != nil {
-		return errors.Wrap("anvil/file: unable to sync location to disk", err)
+	if err = f.writeSync(header[:], headerOffset); err != nil {
+		return errors.Wrap("anvil/file: unable to update header", err)
 	}
 
-	chunk := f.header.get(x, z)
-	for i := 0; i < int(chunk.size); i++ {
-		f.used.Clear(uint(chunk.location) + uint(i))
-	}
+	chunkHeader := f.header.get(x, z)
+	f.clearUsed(chunkHeader)
 
-	chunk.location = uint32(offset)
-	chunk.size = uint8(size)
-	chunk.timestamp = uint32(time.Now().Unix())
+	*chunkHeader = chunk{location: uint32(offset), size: uint8(size), timestamp: uint32(time.Now().Unix())}
+	f.setUsed(chunkHeader)
 
-	binary.BigEndian.PutUint32(header[:], chunk.timestamp)
-	if _, err = f.f.WriteAt(header[:], headerOffset+sectionSize); err != nil {
+	binary.BigEndian.PutUint32(header[:], chunkHeader.timestamp)
+	if err = f.writeSync(header[:], headerOffset+sectionSize); err != nil {
 		return errors.Wrap("anvil/file: unable to update timestamp", err)
-	}
-	if err = f.f.Sync(); err != nil {
-		return errors.Wrap("anvil/file: unable to sync timestamp to disk", err)
 	}
 
 	return nil
 }
 
+// setUsed marks the space used by the given chunk in the `used` bitset as used.
+func (f *File) setUsed(c *chunk) {
+	end := uint(c.location) + uint(c.size)
+	for i := uint(c.location); i < end; i++ {
+		if f.used.Test(i) {
+			panic("set overflows into used region")
+		}
+
+		f.used.Set(i)
+	}
+}
+
+// clearUsed marks the space used by the given chunk in the `used` bitset as unused.
+func (f *File) clearUsed(c *chunk) {
+	if c.location == 0 || c.size == 0 {
+		return
+	}
+
+	end := uint(c.location) + uint(c.size)
+	for i := uint(c.location); i < end; i++ {
+		if !f.used.Test(i) {
+			panic("invalid clear")
+		}
+		f.used.Clear(i)
+	}
+}
+
+// writeSync writes the given byte slice to the given position
+// and syncs the changes to disk.
+func (f *File) writeSync(p []byte, at int64) (err error) {
+	if _, err = f.f.WriteAt(p, at); err == nil {
+		err = f.f.Sync()
+	}
+	return
+}
+
 var zeroHeader [5]byte
 
-func (f *File) compress(b []byte) *bytebufferpool.ByteBuffer {
-	buf := bufferpool.Get()
+func (f *File) compress(b []byte) (buf *bytebufferpool.ByteBuffer, err error) {
+	buf = bufferpool.Get()
 	buf.Reset()
-	buf.Write(zeroHeader[:])
+	_, _ = buf.Write(zeroHeader[:])
+
 	f.zlib.Reset(buf)
-	f.zlib.Write(b)
-	f.zlib.Close()
-	binary.BigEndian.PutUint32(buf.B, uint32(buf.Len()-5))
-	buf.B[4] = compressionZlib
-	return buf
+	if _, err = f.zlib.Write(b); err == nil {
+		if err = f.zlib.Close(); err == nil {
+			binary.BigEndian.PutUint32(buf.B, uint32(buf.Len()-5))
+			buf.B[4] = compressionZlib
+			return buf, nil
+		}
+	}
+
+	bufferpool.Put(buf)
+	return nil, err
 }
 
 // findSpace finds the next free space large enough to store `size` sections
