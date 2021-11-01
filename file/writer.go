@@ -52,6 +52,10 @@ func (f *File) Write(x, z int, b []byte) (err error) {
 		if fileOffset, err = f.f.Seek(0, io.SeekEnd); err != nil {
 			return err
 		}
+		if fileOffset < sectionSize*2 {
+			fileOffset = sectionSize * 2
+		}
+
 		offset = sections(uint(fileOffset))
 		fileOffset = int64(offset) * sectionSize
 		newSize := int64(offset+size) * sectionSize

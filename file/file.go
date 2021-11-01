@@ -48,14 +48,11 @@ func Open(path string) (*File, error) {
 		if !os.IsNotExist(err) {
 			return nil, err
 		}
-		if err = createEmpty(path); err != nil {
-			return nil, errors.Wrap("anvil/file: error creating file", err)
-		}
 	} else {
 		fileSize = info.Size()
 	}
 
-	f, err := fs.OpenFile(path, os.O_RDWR, 0666)
+	f, err := fs.OpenFile(path, os.O_RDWR|os.O_CREATE, 0666)
 	if err != nil {
 		return nil, errors.Wrap("anvil/file: unable to open file", err)
 	}
@@ -66,21 +63,6 @@ func Open(path string) (*File, error) {
 	}
 
 	return &File{f: f, Reader: r, zlib: zlib.NewWriter(io.Discard)}, nil
-}
-
-// createEmpty creates an empty anvil file at the given path
-func createEmpty(path string) (err error) {
-	var f afero.File
-	if f, err = fs.Create(path); err == nil {
-		if err = f.Truncate(sectionSize * 2); err == nil {
-			if err = f.Sync(); err == nil {
-				if err = f.Close(); err == nil {
-					return err
-				}
-			}
-		}
-	}
-	return
 }
 
 // NewReader creates a new anvil reader

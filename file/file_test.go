@@ -13,15 +13,6 @@ func init() {
 	fs = afero.NewCopyOnWriteFs(afero.NewBasePathFs(&afero.OsFs{}, "../testdata"), &afero.MemMapFs{})
 }
 
-func TestCreateEmpty(t *testing.T) {
-	is := is.New(t)
-	err := createEmpty("empty-test.mca")
-	is(err == nil, "unexpected error: %s", err)
-	stat, err := fs.Stat("empty-test.mca")
-	is(err == nil, "fs.Stat returned an error: %s", err)
-	is(stat.Size() == sectionSize*2, "created file has incorrect size: expected %d, found: %d", sectionSize*2, stat.Size())
-}
-
 func TestWriteNew(t *testing.T) {
 	is := is.New(t)
 	sections := [16][]byte{}
