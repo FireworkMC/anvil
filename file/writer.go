@@ -29,12 +29,18 @@ func (f *File) Write(x, z int, b []byte) (err error) {
 		return fmt.Errorf("anvil/file: invalid chunk position")
 	}
 
-	// TODO: handle zero length.
+	if len(b) == 0 {
+		f.mux.Lock()
+		err = f.updateHeader(x, z, 0, 0)
+		f.mux.Unlock()
+		return
+	}
 
 	var buf *bytebufferpool.ByteBuffer
 	if buf, err = f.compress(b); err != nil {
 		return errors.Wrap("anvil/file: error compressing data", err)
 	}
+	defer bufferpool.Put(buf)
 
 	size := sections(uint(len(buf.B)) + 5)
 
@@ -46,31 +52,38 @@ func (f *File) Write(x, z int, b []byte) (err error) {
 	defer f.mux.Unlock()
 
 	offset, hasSpace := f.findSpace(size)
-	var fileOffset = int64(offset) * sectionSize
 
 	if !hasSpace {
-		if fileOffset, err = f.f.Seek(0, io.SeekEnd); err != nil {
-			return err
-		}
-		if fileOffset < sectionSize*2 {
-			fileOffset = sectionSize * 2
-		}
-
-		offset = sections(uint(fileOffset))
-		fileOffset = int64(offset) * sectionSize
-		newSize := int64(offset+size) * sectionSize
-
-		if err = f.f.Truncate(newSize); err != nil {
+		if offset, err = f.growFile(size); err != nil {
 			return errors.Wrap("anvil/file: unable to grow file", err)
 		}
 	}
 
-	if err = f.writeSync(buf.B, fileOffset); err != nil {
+	if err = f.writeSync(buf.B, int64(offset)*sectionSize); err != nil {
 		return errors.Wrap("anvil/file: unable to write chunk data", err)
 	}
 
-	bufferpool.Put(buf)
+	return f.updateHeader(x, z, offset, uint8(size))
+}
 
+// growFile grows the file to fit `size` more sections.
+func (f *File) growFile(size uint) (offset uint, err error) {
+	var fileSize int64
+	if fileSize, err = f.f.Seek(0, io.SeekEnd); err == nil {
+
+		// make space for the header if the file does not have one.
+		if fileSize < sectionSize*2 {
+			fileSize = sectionSize * 2
+		}
+
+		offset = sections(uint(fileSize))
+		newSize := int64(offset+size) * sectionSize // insure the file size is a multiple of 4096 bytes
+		err = f.f.Truncate(newSize)
+	}
+	return
+}
+
+func (f *File) updateHeader(x, z int, offset uint, size uint8) (err error) {
 	headerOffset := int64(x<<4 | z<<2)
 
 	var header [4]byte
@@ -89,8 +102,7 @@ func (f *File) Write(x, z int, b []byte) (err error) {
 	if err = f.writeSync(header[:], headerOffset+sectionSize); err != nil {
 		return errors.Wrap("anvil/file: unable to update timestamp", err)
 	}
-
-	return nil
+	return
 }
 
 // setUsed marks the space used by the given chunk in the `used` bitset as used.

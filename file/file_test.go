@@ -15,7 +15,7 @@ func init() {
 
 func TestWriteNew(t *testing.T) {
 	is := is.New(t)
-	sections := [16][]byte{}
+	sections := [32][]byte{}
 	for i := range sections {
 		sections[i] = bytes.Repeat([]byte{byte(i + 1)}, (i+1)*sectionSize)
 	}
