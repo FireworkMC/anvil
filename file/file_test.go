@@ -15,41 +15,29 @@ func init() {
 }
 
 func TestWriteNew(t *testing.T) {
-	is := is.New(t)
 	sections := [1024][]byte{}
 	for i := range sections {
 		sections[i] = bytes.Repeat([]byte{byte(i + 1)}, (i+1)*128)
 	}
-	f, err := Open("write-test-new.mca")
-	is(err == nil, "unexpected error occurred while creating anvil file: %s", err)
-	for i := range sections {
-		f.Write(i&0x1f, i>>5, sections[i])
-
-		n, err := f.f.Seek(0, io.SeekEnd)
-		is(err == nil, "unexpected error")
-		is(n&sectionSizeMask == 0, "file size is not a multiple of `sectionSize`: %d", n)
-
-		r, err := f.Read(i&0x1f, i>>5)
-		is(err == nil, "failed to read data: %s", err)
-		buf, err := io.ReadAll(r)
-		r.Close()
-		is(err == nil, "failed to read data")
-		is.Equal(buf, sections[i], "incorrect value read")
-	}
+	testRoundtrip(is.New(t), "write-test-new.mca", sections[:])
 }
 
-func TestWriteLarge(t *testing.T) {
-	is := is.New(t)
+func TestWriteNewLarge(t *testing.T) {
 	sections := [16][]byte{}
 	for i := range sections {
 		buf := make([]byte, sectionSize*16)
 		rand.Read(buf)
 		sections[i] = buf
 	}
-	f, err := Open("write-test-new.mca")
+	testRoundtrip(is.New(t), "write-test-new-large.mca", sections[:])
+}
+
+func testRoundtrip(is is.Is, name string, sections [][]byte) {
+	f, err := Open(name)
 	is(err == nil, "unexpected error occurred while creating anvil file: %s", err)
-	for i := range sections {
-		f.Write(i&0x1f, i>>5, sections[i])
+
+	for i, buf := range sections {
+		f.Write(i&0x1f, i>>5, buf)
 
 		n, err := f.f.Seek(0, io.SeekEnd)
 		is(err == nil, "unexpected error")
@@ -57,9 +45,21 @@ func TestWriteLarge(t *testing.T) {
 
 		r, err := f.Read(i&0x1f, i>>5)
 		is(err == nil, "failed to read data: %s", err)
-		buf, err := io.ReadAll(r)
-		r.Close()
+		data, err := io.ReadAll(r)
+		_ = r.Close()
 		is(err == nil, "failed to read data")
-		is.Equal(buf, sections[i], "incorrect value read")
+		is.Equal(buf, data, "incorrect value read")
+	}
+	f.f.Close()
+
+	f, err = Open(name)
+	is(err == nil, "unexpected error occurred while opening anvil file: %s", err)
+	for i, buf := range sections {
+		r, err := f.Read(i&0x1f, i>>5)
+		is(err == nil, "failed to read data: %s", err)
+		data, err := io.ReadAll(r)
+		_ = r.Close()
+		is(err == nil, "failed to read data")
+		is.Equal(buf, data, "incorrect value read")
 	}
 }

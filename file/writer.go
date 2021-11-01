@@ -86,7 +86,7 @@ func (f *File) growFile(size uint) (offset uint, err error) {
 }
 
 func (f *File) updateHeader(x, z int, offset uint, size uint8) (err error) {
-	headerOffset := int64(x<<4 | z<<2)
+	headerOffset := int64(x|(z<<5)) << 2
 
 	var header [4]byte
 	binary.BigEndian.PutUint32(header[:], uint32(offset)<<8|uint32(size))

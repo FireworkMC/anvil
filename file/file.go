@@ -29,7 +29,7 @@ type header [chunks]chunk
 
 func (h *header) clear() { *h = header{} }
 
-func (h *header) get(x, z int) *chunk { return &h[(x&0x1f)<<2|z&0x1f] }
+func (h *header) get(x, z int) *chunk { return &h[(x&0x1f)|((z&0x1f)<<5)] }
 
 type chunk struct {
 	size      uint8
