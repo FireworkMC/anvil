@@ -30,7 +30,9 @@ func (f *File) Write(x, z int, b []byte) (err error) {
 
 	if len(b) == 0 {
 		f.mux.Lock()
-		err = f.updateHeader(x, z, 0, 0)
+		if _, err = f.growFile(0); err == nil {
+			err = f.updateHeader(x, z, 0, 0)
+		}
 		f.mux.Unlock()
 		return
 	}
