@@ -169,7 +169,7 @@ func (w *Writer) compress(b []byte) (buf *buffer, err error) {
 	w.c.Reset(buf)
 	if _, err = w.c.Write(b); err == nil {
 		if err = w.c.Close(); err == nil {
-			buf.Header(byte(w.cm))
+			buf.Header(w.cm)
 			return buf, nil
 		}
 	}
