@@ -17,12 +17,25 @@ var DefaultCompression = CompressionZlib
 
 // supported methods
 const (
-	CompressionGzip = 1 + iota
+	CompressionGzip CompressMethod = 1 + iota
 	CompressionZlib
 	CompressionNone
 
 	externalMask = 0x80
 )
+
+func (c CompressMethod) String() string {
+	switch c {
+	case CompressionGzip:
+		return "gzip"
+	case CompressionZlib:
+		return "zlib"
+	case CompressionNone:
+		return "none"
+	default:
+		return "unsupported"
+	}
+}
 
 var (
 	gzipDecompressPool = decompressorPool{new: func(src io.ReadCloser) (readCloseResetter, error) {

@@ -3,6 +3,7 @@ package file
 import (
 	"bytes"
 	"crypto/rand"
+	"fmt"
 	"io"
 	"testing"
 
@@ -14,12 +15,16 @@ func init() {
 	fs = afero.NewCopyOnWriteFs(afero.NewBasePathFs(&afero.OsFs{}, "../testdata"), &afero.MemMapFs{})
 }
 
+var compressionMethods = []CompressMethod{CompressionGzip, CompressionZlib, CompressionNone}
+
 func TestWriteNew(t *testing.T) {
 	sections := [1024][]byte{}
 	for i := range sections {
 		sections[i] = bytes.Repeat([]byte{byte(i + 1)}, (i+1)*128)
 	}
-	testRoundtrip(is.New(t), "write-test-new.mca", sections[:])
+	for _, method := range compressionMethods {
+		testRoundtrip(is.New(t), method, "write-test-new", sections[:])
+	}
 }
 
 func TestWriteNewLarge(t *testing.T) {
@@ -29,12 +34,17 @@ func TestWriteNewLarge(t *testing.T) {
 		rand.Read(buf)
 		sections[i] = buf
 	}
-	testRoundtrip(is.New(t), "write-test-new-large.mca", sections[:])
+	for _, method := range compressionMethods {
+		testRoundtrip(is.New(t), method, "write-test-new-large", sections[:])
+	}
 }
 
-func testRoundtrip(is is.Is, name string, sections [][]byte) {
+func testRoundtrip(is is.Is, cm CompressMethod, name string, sections [][]byte) {
+	name = fmt.Sprintf("%s-%s.mca", name, cm.String())
 	f, err := Open(name)
 	is(err == nil, "unexpected error occurred while creating anvil file: %s", err)
+
+	f.CompressionMethod(cm)
 
 	for i, buf := range sections {
 		f.Write(i&0x1f, i>>5, buf)
@@ -48,10 +58,9 @@ func testRoundtrip(is is.Is, name string, sections [][]byte) {
 		data, err := io.ReadAll(r)
 		_ = r.Close()
 		is(err == nil, "failed to read data")
-		is.Equal(buf, data, "incorrect value read")
+		is(bytes.Equal(buf, data), "incorrect value read")
 	}
 	f.f.Close()
-
 	f, err = Open(name)
 	is(err == nil, "unexpected error occurred while opening anvil file: %s", err)
 	for i, buf := range sections {
@@ -60,6 +69,7 @@ func testRoundtrip(is is.Is, name string, sections [][]byte) {
 		data, err := io.ReadAll(r)
 		_ = r.Close()
 		is(err == nil, "failed to read data")
-		is.Equal(buf, data, "incorrect value read")
+		is(bytes.Equal(buf, data), "incorrect value read")
 	}
+
 }
