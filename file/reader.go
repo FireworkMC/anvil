@@ -20,21 +20,6 @@ const (
 	ErrSize = errors.Error("anvil/file: invalid file size")
 )
 
-const (
-	compressionGzip = 1 + iota
-	compressionZlib
-	compressionNone
-
-	externalMask = 0x80
-)
-
-// Dir TODO
-type Dir struct{}
-
-func (d *Dir) readExternal(x, z int) (io.ReadCloser, error) { return nil, ErrExternal }
-
-func (d *Dir) writeExternal(x, z int, b *buffer) error { return ErrExternal }
-
 // Reader a region file reader
 type Reader struct {
 	mux    sync.RWMutex
@@ -74,7 +59,10 @@ func (r *Reader) Read(x, z int) (reader io.ReadCloser, err error) {
 
 	var src io.ReadCloser
 
-	if header[4]&externalMask == 0 {
+	method := CompressMethod(header[4] &^ externalMask)
+	external := header[4]&externalMask != 0
+
+	if !external {
 		src = io.NopCloser(io.NewSectionReader(r.reader, offset+5, int64(length)))
 	} else if r.dir != nil {
 		if src, err = r.dir.readExternal(x, z); err != nil {
@@ -84,19 +72,5 @@ func (r *Reader) Read(x, z int) (reader io.ReadCloser, err error) {
 		return nil, ErrExternal
 	}
 
-	return r.readerFor(src, header[4]&^externalMask)
-}
-
-func (r *Reader) readerFor(src io.ReadCloser, compression byte) (reader io.ReadCloser, err error) {
-	switch compression {
-	case compressionGzip:
-		reader, err = newGzipReader(src)
-	case compressionZlib:
-		reader, err = newZlibReader(src)
-	case compressionNone:
-		reader = io.NopCloser(src)
-	default:
-		err = errors.Error("unsupported compression method")
-	}
-	return reader, errors.Wrap("anvil/file: unable to decompress", err)
+	return method.decompressor(src)
 }

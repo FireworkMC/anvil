@@ -6,7 +6,6 @@ import (
 	"io"
 	"time"
 
-	"github.com/klauspost/compress/zlib"
 	"github.com/spf13/afero"
 	"github.com/yehan2002/errors"
 )
@@ -14,8 +13,10 @@ import (
 // Writer is a single anvil region file.
 type Writer struct {
 	*Reader
-	zlib *zlib.Writer
-	f    afero.File
+	f afero.File
+
+	c  compressor
+	cm CompressMethod
 }
 
 func (w *Writer) Write(x, z int, b []byte) (err error) {
@@ -29,6 +30,10 @@ func (w *Writer) Write(x, z int, b []byte) (err error) {
 			err = w.updateHeader(x, z, 0, 0)
 		}
 		w.mux.Unlock()
+		return
+	}
+
+	if err = w.initCompression(); err != nil {
 		return
 	}
 
@@ -63,6 +68,22 @@ func (w *Writer) Write(x, z int, b []byte) (err error) {
 	}
 
 	return w.updateHeader(x, z, offset, uint8(size))
+}
+
+// CompressionMethod sets the compression method to be used by the writer
+func (w *Writer) CompressionMethod(m CompressMethod) (err error) {
+	var c compressor
+	if c, err = m.compressor(); err == nil {
+		w.cm, w.c = m, c
+	}
+	return
+}
+
+func (w *Writer) initCompression() (err error) {
+	if w.cm == 0 {
+		return w.CompressionMethod(CompressionZlib)
+	}
+	return
 }
 
 // growFile grows the file to fit `size` more sections.
@@ -145,10 +166,10 @@ var zeroHeader [5]byte
 
 func (w *Writer) compress(b []byte) (buf *buffer, err error) {
 	buf = &buffer{}
-	w.zlib.Reset(buf)
-	if _, err = w.zlib.Write(b); err == nil {
-		if err = w.zlib.Close(); err == nil {
-			buf.Header(compressionZlib)
+	w.c.Reset(buf)
+	if _, err = w.c.Write(b); err == nil {
+		if err = w.c.Close(); err == nil {
+			buf.Header(byte(w.cm))
 			return buf, nil
 		}
 	}

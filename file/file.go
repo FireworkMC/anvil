@@ -49,7 +49,7 @@ func Open(path string) (w *Writer, err error) {
 		return nil, err
 	}
 
-	return &Writer{f: f, Reader: r, zlib: zlib.NewWriter(io.Discard)}, nil
+	return &Writer{f: f, Reader: r, c: zlib.NewWriter(io.Discard)}, nil
 }
 
 // NewReader creates a new anvil reader
