@@ -4,7 +4,6 @@ import (
 	"fmt"
 	"io"
 	"os"
-	"sync"
 
 	"github.com/bits-and-blooms/bitset"
 	"github.com/klauspost/compress/zlib"
@@ -13,32 +12,24 @@ import (
 	"github.com/yehan2002/fastbytes/v2"
 )
 
-// chunks the number of chunks in a region file
-const chunks = 32 * 32
+const (
+	// Entries the number of entries in a region file
+	Entries = 32 * 32
+	// SectionSize the size of a section
+	SectionSize     = Entries * 4 // 1 << sectionShift
+	sectionSizeMask = SectionSize - 1
+	sectionShift    = 12
+)
 
-// sectionSize the size of a section
-const sectionSize = chunks * 4 // 1 << sectionShift
-const sectionShift = 12
-const sectionSizeMask = sectionSize - 1
+// sections returns the minimum number of sections to store the given number of bytes
+func sections(v uint) uint {
+	return (v + sectionSizeMask) / SectionSize
+}
 
 var fs afero.Fs = &afero.OsFs{}
 
-var regionHeaderPool = sync.Pool{New: func() interface{} { return &header{} }}
-
-type header [chunks]chunk
-
-func (h *header) clear() { *h = header{} }
-
-func (h *header) get(x, z int) *chunk { return &h[(x&0x1f)|((z&0x1f)<<5)] }
-
-type chunk struct {
-	size      uint8
-	location  uint32
-	timestamp uint32
-}
-
 // Open opens the given file
-func Open(path string) (*File, error) {
+func Open(path string) (w *Writer, err error) {
 	var fileSize int64
 	if info, err := fs.Stat(path); err != nil {
 		if !os.IsNotExist(err) {
@@ -48,80 +39,82 @@ func Open(path string) (*File, error) {
 		fileSize = info.Size()
 	}
 
-	f, err := fs.OpenFile(path, os.O_RDWR|os.O_CREATE, 0666)
-	if err != nil {
+	var f afero.File
+	if f, err = fs.OpenFile(path, os.O_RDWR|os.O_CREATE, 0666); err != nil {
 		return nil, errors.Wrap("anvil/file: unable to open file", err)
 	}
 
-	r, err := NewReader(f, fileSize)
-	if err != nil {
+	var r *Reader
+	if r, err = NewReader(f, fileSize); err != nil {
 		return nil, err
 	}
 
-	return &File{f: f, Reader: r, zlib: zlib.NewWriter(io.Discard)}, nil
+	return &Writer{f: f, Reader: r, zlib: zlib.NewWriter(io.Discard)}, nil
 }
 
 // NewReader creates a new anvil reader
-func NewReader(r io.ReaderAt, fileSize int64) (*Reader, error) {
+func NewReader(src io.ReaderAt, fileSize int64) (*Reader, error) {
 
-	if fileSize&sectionSizeMask != 0 || (fileSize != 0 && fileSize < sectionSize*2) {
-		return nil, fmt.Errorf("anvil/file: malformed region file")
+	// check if the file size is 0 or a multiple of 4096
+	if fileSize&sectionSizeMask != 0 || (fileSize != 0 && fileSize < SectionSize*2) {
+		return nil, ErrSize
 	}
 
-	header := regionHeaderPool.Get().(*header)
+	header := headerPool.Get().(*Header)
 
-	if fileSize == 0 {
+	if fileSize == 0 { // fast path for empty files
 		header.clear()
-		return &Reader{header: header, used: bitset.New(chunks), reader: r}, nil
+		return &Reader{header: header, used: bitset.New(Entries), reader: src}, nil
 	}
 
-	buf := sectionPool.Get().(*section)
-	defer buf.Free()
+	maxSection := fileSize / SectionSize
+	r := &Reader{header: header, used: bitset.New(uint(maxSection)), reader: src}
 
-	var size [chunks]uint32
-	if err := readHeaderSection(r, buf, 0); err != nil {
+	var size, timestamps [Entries]uint32
+	if err := r.readHeader(src, size[:], timestamps[:]); err != nil {
 		return nil, err
 	}
-	fastbytes.BigEndian.ToU32(buf[:], size[:])
 
-	var timestamps [chunks]uint32
-	if err := readHeaderSection(r, buf, sectionSize); err != nil {
-		return nil, err
-	}
-	fastbytes.BigEndian.ToU32(buf[:], timestamps[:])
+	for i := 0; i < Entries; i++ {
+		c := Entry{Timestamp: int32(timestamps[i]), Size: uint8(size[i]), Offset: size[i] >> 8}
 
-	maxSection := fileSize / sectionSize
-	used := bitset.New(uint(maxSection))
-
-	for i := 0; i < chunks; i++ {
-		entry := chunk{
-			timestamp: timestamps[i],
-			size:      uint8(size[i]),
-			location:  size[i] >> 8,
-		}
-
-		start := entry.location
-		for p := uint32(0); p < uint32(entry.size); p++ {
+		start := c.Offset
+		for p := uint32(0); p < uint32(c.Size); p++ {
 			pos := start + p
 			if pos > uint32(maxSection) {
 				return nil, fmt.Errorf("anvil/file: invalid chunk data location")
 			}
-			if used.Test(uint(pos)) {
+			if r.used.Test(uint(pos)) {
 				return nil, fmt.Errorf("anvil/file: invalid chunk size/location")
 			}
 
-			used.Set(uint(pos))
+			r.used.Set(uint(pos))
 		}
-		header[i] = entry
+
+		header[i] = c
 	}
-	return &Reader{header: header, used: used, reader: r}, nil
+	return r, nil
 }
 
-func readHeaderSection(f io.ReaderAt, buf *section, offset int) error {
-	if n, err := f.ReadAt(buf[:], int64(offset)); err != nil {
-		return errors.Wrap("anvil/file: unable to read file header", err)
-	} else if n != sectionSize {
-		return fmt.Errorf("anvil/file: Incorrect number of bytes read")
+// readHeader reads the region file header.
+func (r *Reader) readHeader(f io.ReaderAt, size, timestamps []uint32) (err error) {
+	if err = r.readUint32Section(f, size[:], 0); err == nil {
+		err = r.readUint32Section(f, timestamps[:], SectionSize)
 	}
+	return err
+}
+
+// readUint32Section reads a 4096 byte section at the given offset into the given uint32 slice.
+func (r *Reader) readUint32Section(f io.ReaderAt, dst []uint32, offset int) error {
+	tmp := sectionPool.Get().(*section)
+	defer tmp.Free()
+
+	if n, err := f.ReadAt(tmp[:], int64(offset)); err != nil {
+		return errors.Wrap("anvil/file: unable to read file header", err)
+	} else if n != SectionSize {
+		return errors.Wrap("anvil/file: Incorrect number of bytes read", io.EOF)
+	}
+
+	fastbytes.BigEndian.ToU32(tmp[:], dst)
 	return nil
 }

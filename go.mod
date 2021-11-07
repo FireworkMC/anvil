@@ -8,11 +8,11 @@ require (
 	github.com/spf13/afero v1.6.0
 	github.com/yehan2002/errors v1.1.1
 	github.com/yehan2002/fastbytes/v2 v2.0.4
-	github.com/yehan2002/is/v2 v2.2.1
+	github.com/yehan2002/is/v2 v2.2.2
 )
 
 require (
-	github.com/go-test/deep v1.0.7 // indirect
-	golang.org/x/sys v0.0.0-20210403161142-5e06dd20ab57 // indirect
-	golang.org/x/text v0.3.3 // indirect
+	github.com/go-test/deep v1.0.8 // indirect
+	golang.org/x/sys v0.0.0-20211102192858-4dd72447c267 // indirect
+	golang.org/x/text v0.3.7 // indirect
 )

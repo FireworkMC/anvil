@@ -16,6 +16,8 @@ const (
 	ErrExternal = errors.Error("anvil/file: chunk is in separate file")
 	// ErrNotGenerated returned if the chunk has not been generated yet
 	ErrNotGenerated = errors.Error("anvil/file: chunk has not been generated")
+	// ErrSize the given file has an invalid file size
+	ErrSize = errors.Error("anvil/file: invalid file size")
 )
 
 const (
@@ -31,10 +33,12 @@ type Dir struct{}
 
 func (d *Dir) readExternal(x, z int) (io.ReadCloser, error) { return nil, ErrExternal }
 
+func (d *Dir) writeExternal(x, z int, b *buffer) error { return ErrExternal }
+
 // Reader a region file reader
 type Reader struct {
 	mux    sync.RWMutex
-	header *header
+	header *Header
 	used   *bitset.BitSet
 	reader io.ReaderAt
 	dir    *Dir
@@ -49,13 +53,13 @@ func (r *Reader) Read(x, z int) (reader io.ReadCloser, err error) {
 	r.mux.RLock()
 	defer r.mux.RUnlock()
 
-	chunk := r.header.get(x, z)
+	chunk := r.header.Get(x, z)
 
-	if chunk.location == 0 && chunk.size == 0 {
+	if chunk.Offset == 0 && chunk.Size == 0 {
 		return nil, ErrNotGenerated
 	}
 
-	offset := int64(chunk.location) * sectionSize
+	offset := int64(chunk.Offset) * SectionSize
 
 	header := [5]byte{}
 	if _, err := r.reader.ReadAt(header[:], offset); err != nil {
@@ -64,7 +68,7 @@ func (r *Reader) Read(x, z int) (reader io.ReadCloser, err error) {
 
 	length := binary.BigEndian.Uint32(header[:])
 
-	if length/sectionSize > uint32(chunk.size) {
+	if length/SectionSize > uint32(chunk.Size) {
 		return nil, errors.Error("anvil/file: chunk size mismatch")
 	}
 

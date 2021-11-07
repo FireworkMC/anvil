@@ -8,7 +8,7 @@ import (
 
 var sectionPool = sync.Pool{New: func() interface{} { return &section{} }}
 
-type section [sectionSize]byte
+type section [SectionSize]byte
 
 func (b *section) Free() { sectionPool.Put(b) }
 
@@ -54,7 +54,7 @@ func (b *buffer) WriteTo(w io.WriterAt, at int64) error {
 		if _, err := w.WriteAt(b.buf[i][:], at); err != nil {
 			return err
 		}
-		at += sectionSize
+		at += SectionSize
 	}
 	_, err := w.WriteAt(b.buf[len(b.buf)-1][:b.length&sectionSizeMask], at)
 	return err
