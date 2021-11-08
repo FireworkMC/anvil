@@ -45,7 +45,7 @@ func (b *buffer) Write(p []byte) (n int, err error) {
 // Header writes the header for the data.
 // Calling this before calling Write will panic.
 func (b *buffer) Header(compressionMethod CompressMethod) {
-	binary.BigEndian.PutUint32(b.buf[0][:], uint32(b.length-5))
+	binary.BigEndian.PutUint32(b.buf[0][:], uint32(b.length-4))
 	b.buf[0][4] = byte(compressionMethod)
 }
 

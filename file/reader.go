@@ -26,6 +26,7 @@ func (f *File) Read(x, z int) (reader io.ReadCloser, err error) {
 
 	f.mux.RLock()
 	defer f.mux.RUnlock()
+	// FIXME: possible data race: mux gets unlocked before the data is read.
 
 	chunk := f.header.Get(x, z)
 
@@ -52,7 +53,7 @@ func (f *File) Read(x, z int) (reader io.ReadCloser, err error) {
 	external := header[4]&externalMask != 0
 
 	if !external {
-		src = io.NopCloser(io.NewSectionReader(f.read, offset+5, int64(length)))
+		src = io.NopCloser(io.NewSectionReader(f.read, offset+5, int64(length-1)))
 	} else if f.dir != nil {
 		if src, err = f.dir.ReadExternal(x, z); err != nil {
 			return nil, err

@@ -57,7 +57,7 @@ func testRoundtrip(is is.Is, cm CompressMethod, name string, sections [][]byte) 
 		is(err == nil, "failed to read data: %s", err)
 		data, err := io.ReadAll(r)
 		_ = r.Close()
-		is(err == nil, "failed to read data")
+		is(err == nil, "failed to read data: %s", err)
 		is(bytes.Equal(buf, data), "incorrect value read")
 	}
 	f.close.Close()
