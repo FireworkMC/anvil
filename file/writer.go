@@ -81,7 +81,7 @@ func (f *File) Write(x, z int, b []byte) (err error) {
 		}
 	}
 
-	if err = buf.WriteTo(f.write, int64(offset)*SectionSize); err != nil {
+	if err = buf.WriteTo(f.write, int64(offset)*SectionSize, true); err != nil {
 		return errors.Wrap("anvil/file: unable to write chunk data", err)
 	}
 	if err = f.write.Sync(); err != nil {

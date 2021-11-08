@@ -40,5 +40,5 @@ func (d *dir) WriteExternal(x, z int, b *buffer) (err error) {
 	if f, err = fs.Create(fmt.Sprintf("r.%d.%d.mcc", x, z)); err != nil {
 		return errors.Wrap("anvil/file: unable to create external file", err)
 	}
-	return errors.Wrap("anvil/file: unable to write external file", b.WriteTo(&trimmedWriter{WriterAt: f}, 0))
+	return errors.Wrap("anvil/file: unable to write external file", b.WriteTo(f, 0, false))
 }

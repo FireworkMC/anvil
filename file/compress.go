@@ -47,6 +47,7 @@ var (
 	}}
 )
 
+// decompressorPool a pool of readCloseResetters that can be used to decompress data
 type decompressorPool struct {
 	sync.Pool
 	new func(io.ReadCloser) (readCloseResetter, error)
@@ -60,9 +61,12 @@ func (d *decompressorPool) Get(src io.ReadCloser) (dec *decompressor, err error)
 	} else {
 		r, err = d.new(src)
 	}
-	return &decompressor{src: src, r: r, pool: &d.Pool}, err
+	return &decompressor{src: src, decompress: r, pool: &d.Pool}, err
 }
 
+// decompressor returns a decompressor for the compression method.
+// Callers must close the returned reader after use for it to be reused.
+// Trying to use the reader after calling Close will cause a panic.
 func (c CompressMethod) decompressor(src io.ReadCloser) (reader io.ReadCloser, err error) {
 	switch c {
 	case CompressionGzip:
@@ -77,6 +81,9 @@ func (c CompressMethod) decompressor(src io.ReadCloser) (reader io.ReadCloser, e
 	return reader, errors.Wrap("anvil/file: unable to decompress", err)
 }
 
+// compressor returns a compressor for the compression method.
+// Callers should reuse the returned compressor and should only
+// create a new one when the compression method changes.
 func (c CompressMethod) compressor() (compressor, error) {
 	switch c {
 	case CompressionGzip:
@@ -95,11 +102,31 @@ type compressor interface {
 	Reset(io.Writer)
 }
 
+type decompressor struct {
+	src        io.ReadCloser
+	decompress readCloseResetter
+	pool       *sync.Pool
+}
+
+var _ io.ReadCloser = &decompressor{}
+
+func (z *decompressor) Read(p []byte) (n int, err error) { return z.decompress.Read(p) }
+
+func (z *decompressor) Close() (err error) {
+	if z.decompress != nil {
+		z.src.Close()
+		z.pool.Put(z.decompress)
+		*z = decompressor{}
+	}
+	return
+}
+
 type zlibReader interface {
 	io.ReadCloser
 	zlib.Resetter
 }
 
+// zlibReadResetWrapper a wrapper around zlib.Reader to make it implement the readResetCloser interface.
 type zlibReadResetWrapper struct{ zlibReader }
 
 func (z *zlibReadResetWrapper) Reset(r io.Reader) error { return z.zlibReader.Reset(r, nil) }
@@ -113,23 +140,7 @@ type readCloseResetter interface {
 var _ readCloseResetter = &zlibReadResetWrapper{}
 var _ readCloseResetter = &gzip.Reader{}
 
-type decompressor struct {
-	src  io.ReadCloser
-	r    io.ReadCloser
-	pool *sync.Pool
-}
-
-func (z *decompressor) Read(p []byte) (n int, err error) { return z.r.Read(p) }
-
-func (z *decompressor) Close() (err error) {
-	if z.r != nil {
-		z.src.Close()
-		z.pool.Put(z.r)
-		*z = decompressor{}
-	}
-	return
-}
-
+// noopCompressor a compressor that does nothing.
 type noopCompressor struct{ dst io.Writer }
 
 var _ compressor = &noopCompressor{}

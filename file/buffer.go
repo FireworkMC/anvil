@@ -49,17 +49,36 @@ func (b *buffer) Header(compressionMethod CompressMethod) {
 	b.buf[0][4] = byte(compressionMethod)
 }
 
-func (b *buffer) WriteTo(w io.WriterAt, at int64) error {
-	for i := 0; i < len(b.buf)-1; i++ {
-		if _, err := w.WriteAt(b.buf[i][:], at); err != nil {
+// WriteTo writes this buffer to the given writer at the given position.
+// If header is set, this also writes a 5 byte header at the start of the data
+// that includes the length of the data and the compression method used
+func (b *buffer) WriteTo(w io.WriterAt, off int64, header bool) error {
+	var i int
+
+	if !header {
+		if len(b.buf) == 1 {
+			_, err := w.WriteAt(b.buf[0][5:b.length&sectionSizeMask], off)
 			return err
 		}
-		at += SectionSize
+		if _, err := w.WriteAt(b.buf[0][5:], off); err != nil {
+			return err
+		}
+		off += SectionSize - 5
+		i++
 	}
-	_, err := w.WriteAt(b.buf[len(b.buf)-1][:b.length&sectionSizeMask], at)
+
+	for ; i < len(b.buf)-1; i++ {
+		if _, err := w.WriteAt(b.buf[i][:], off); err != nil {
+			return err
+		}
+		off += SectionSize
+	}
+
+	_, err := w.WriteAt(b.buf[len(b.buf)-1][:b.length&sectionSizeMask], off)
 	return err
 }
 
+// Free frees the buffer for reuse.
 func (b *buffer) Free() {
 	for _, s := range b.buf {
 		s.Free()
@@ -67,22 +86,10 @@ func (b *buffer) Free() {
 	*b = buffer{}
 }
 
+// Len returns the length of the buffer.
+// This includes the length of the header
 func (b *buffer) Len() int { return int(b.length) }
 
 func (b *buffer) grow() {
 	b.buf = append(b.buf, sectionPool.Get().(*section))
-}
-
-// trimmedWriter writes any data after removing the first 5 bytes
-type trimmedWriter struct {
-	skipped bool
-	io.WriterAt
-}
-
-func (t *trimmedWriter) WriteAt(p []byte, off int64) (n int, err error) {
-	if !t.skipped {
-		p = p[5:]
-		t.skipped = true
-	}
-	return t.WriterAt.WriteAt(p, off)
 }
