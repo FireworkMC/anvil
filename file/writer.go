@@ -185,10 +185,10 @@ var zeroHeader [5]byte
 
 func (f *File) compress(b []byte) (buf *buffer, err error) {
 	buf = &buffer{}
+	buf.CompressMethod(f.cm)
 	f.c.Reset(buf)
 	if _, err = f.c.Write(b); err == nil {
 		if err = f.c.Close(); err == nil {
-			buf.Header(f.cm)
 			return buf, nil
 		}
 	}

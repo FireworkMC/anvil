@@ -13,10 +13,12 @@ type section [SectionSize]byte
 func (b *section) Free() { sectionPool.Put(b) }
 
 type buffer struct {
-	length int64
-	buf    []*section
+	length   int64
+	compress CompressMethod
+	buf      []*section
 }
 
+// Write appends data to this buffer
 func (b *buffer) Write(p []byte) (n int, err error) {
 	if b.buf == nil {
 		b.grow()
@@ -42,40 +44,46 @@ func (b *buffer) Write(p []byte) (n int, err error) {
 	return n, nil
 }
 
-// Header writes the header for the data.
-// Calling this before calling Write will panic.
-func (b *buffer) Header(compressionMethod CompressMethod) {
-	binary.BigEndian.PutUint32(b.buf[0][:], uint32(b.length-4))
-	b.buf[0][4] = byte(compressionMethod)
+// CompressionMethod sets the compression method used by the data in the buffer.
+// This is only used to set the compression byte in the header.
+// Callers must compress the data before writing it to this buffer.
+// If this is not called, DefaultCompression is used.
+func (b *buffer) CompressMethod(c CompressMethod) {
+	b.compress = c
 }
 
 // WriteTo writes this buffer to the given writer at the given position.
 // If header is set, this also writes a 5 byte header at the start of the data
 // that includes the length of the data and the compression method used
 func (b *buffer) WriteTo(w io.WriterAt, off int64, header bool) error {
-	var i int
+	startOffset := 5
 
-	if !header {
-		if len(b.buf) == 1 {
-			_, err := w.WriteAt(b.buf[0][5:b.length&sectionSizeMask], off)
-			return err
+	if header {
+		binary.BigEndian.PutUint32(b.buf[0][:4], uint32(b.length-4))
+		if b.compress == 0 {
+			b.compress = DefaultCompression
 		}
-		if _, err := w.WriteAt(b.buf[0][5:], off); err != nil {
-			return err
-		}
-		off += SectionSize - 5
-		i++
+		b.buf[0][4] = byte(b.compress)
+		startOffset = 0
 	}
 
-	for ; i < len(b.buf)-1; i++ {
-		if _, err := w.WriteAt(b.buf[i][:], off); err != nil {
+	for i := 0; i < len(b.buf); i++ {
+		buf := b.buf[i][startOffset:]
+
+		if i == len(b.buf)-1 {
+			// TODO: check if this works properly
+			buf = b.buf[i][startOffset : (b.length-int64(startOffset))&sectionSizeMask]
+		}
+
+		if _, err := w.WriteAt(buf, off); err != nil {
 			return err
 		}
-		off += SectionSize
+
+		off += int64(len(buf))
+		startOffset = 0
 	}
 
-	_, err := w.WriteAt(b.buf[len(b.buf)-1][:b.length&sectionSizeMask], off)
-	return err
+	return nil
 }
 
 // Free frees the buffer for reuse.

@@ -13,7 +13,7 @@ import (
 type CompressMethod byte
 
 // DefaultCompression the default compression method to be used
-var DefaultCompression = CompressionZlib
+const DefaultCompression = CompressionZlib
 
 // supported methods
 const (
@@ -43,6 +43,9 @@ var (
 	}}
 	zlibDecompressPool = decompressorPool{new: func(src io.ReadCloser) (readCloseResetter, error) {
 		t, err := zlib.NewReader(src)
+		if err != nil {
+			return nil, err
+		}
 		return &zlibReadResetWrapper{t.(zlibReader)}, err
 	}}
 )
