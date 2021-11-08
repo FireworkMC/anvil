@@ -72,3 +72,17 @@ func (b *buffer) Len() int { return int(b.length) }
 func (b *buffer) grow() {
 	b.buf = append(b.buf, sectionPool.Get().(*section))
 }
+
+// trimmedWriter writes any data after removing the first 5 bytes
+type trimmedWriter struct {
+	skipped bool
+	io.WriterAt
+}
+
+func (t *trimmedWriter) WriteAt(p []byte, off int64) (n int, err error) {
+	if !t.skipped {
+		p = p[5:]
+		t.skipped = true
+	}
+	return t.WriterAt.WriteAt(p, off)
+}

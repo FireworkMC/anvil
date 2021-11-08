@@ -6,7 +6,6 @@ import (
 	"os"
 
 	"github.com/bits-and-blooms/bitset"
-	"github.com/klauspost/compress/zlib"
 	"github.com/spf13/afero"
 	"github.com/yehan2002/errors"
 	"github.com/yehan2002/fastbytes/v2"
@@ -29,11 +28,19 @@ func sections(v uint) uint {
 var fs afero.Fs = &afero.OsFs{}
 
 // Open opens the given file
-func Open(path string) (w *Writer, err error) {
+func Open(path string, readonly bool) (w *File, err error) {
+	r, size, err := openFile(fs, path)
+	if err != nil {
+		return nil, err
+	}
+	return open(r, readonly, size)
+}
+
+func openFile(fs afero.Fs, path string) (r ReadAtCloser, size int64, err error) {
 	var fileSize int64
 	if info, err := fs.Stat(path); err != nil {
 		if !os.IsNotExist(err) {
-			return nil, err
+			return nil, 0, err
 		}
 	} else {
 		fileSize = info.Size()
@@ -41,19 +48,18 @@ func Open(path string) (w *Writer, err error) {
 
 	var f afero.File
 	if f, err = fs.OpenFile(path, os.O_RDWR|os.O_CREATE, 0666); err != nil {
-		return nil, errors.Wrap("anvil/file: unable to open file", err)
+		return nil, 0, errors.Wrap("anvil/file: unable to open file", err)
 	}
-
-	var r *Reader
-	if r, err = NewReader(f, fileSize); err != nil {
-		return nil, err
-	}
-
-	return &Writer{f: f, Reader: r, c: zlib.NewWriter(io.Discard)}, nil
+	return f, fileSize, nil
 }
 
-// NewReader creates a new anvil reader
-func NewReader(src io.ReaderAt, fileSize int64) (*Reader, error) {
+// ReadAtCloser an interface that implements io.ReadAt and io.Closer
+type ReadAtCloser interface {
+	io.ReaderAt
+	io.Closer
+}
+
+func open(r ReadAtCloser, readonly bool, fileSize int64) (w *File, err error) {
 
 	// check if the file size is 0 or a multiple of 4096
 	if fileSize&sectionSizeMask != 0 || (fileSize != 0 && fileSize < SectionSize*2) {
@@ -61,17 +67,22 @@ func NewReader(src io.ReaderAt, fileSize int64) (*Reader, error) {
 	}
 
 	header := headerPool.Get().(*Header)
+	w = &File{header: header, read: r, close: r, size: fileSize}
+	if write, ok := r.(file); !readonly && ok {
+		w.write = write
+	}
 
 	if fileSize == 0 { // fast path for empty files
 		header.clear()
-		return &Reader{header: header, used: bitset.New(Entries), reader: src}, nil
+		w.used = bitset.New(Entries)
+		return w, nil
 	}
 
 	maxSection := fileSize / SectionSize
-	r := &Reader{header: header, used: bitset.New(uint(maxSection)), reader: src}
+	w.used = bitset.New(uint(maxSection))
 
 	var size, timestamps [Entries]uint32
-	if err := r.readHeader(src, size[:], timestamps[:]); err != nil {
+	if err := w.readHeader(size[:], timestamps[:]); err != nil {
 		return nil, err
 	}
 
@@ -84,32 +95,33 @@ func NewReader(src io.ReaderAt, fileSize int64) (*Reader, error) {
 			if pos > uint32(maxSection) {
 				return nil, fmt.Errorf("anvil/file: invalid chunk data location")
 			}
-			if r.used.Test(uint(pos)) {
+			if w.used.Test(uint(pos)) {
 				return nil, fmt.Errorf("anvil/file: invalid chunk size/location")
 			}
 
-			r.used.Set(uint(pos))
+			w.used.Set(uint(pos))
 		}
 
 		header[i] = c
 	}
-	return r, nil
+
+	return w, nil
 }
 
 // readHeader reads the region file header.
-func (r *Reader) readHeader(f io.ReaderAt, size, timestamps []uint32) (err error) {
-	if err = r.readUint32Section(f, size[:], 0); err == nil {
-		err = r.readUint32Section(f, timestamps[:], SectionSize)
+func (f *File) readHeader(size, timestamps []uint32) (err error) {
+	if err = f.readUint32Section(size[:], 0); err == nil {
+		err = f.readUint32Section(timestamps[:], SectionSize)
 	}
 	return err
 }
 
 // readUint32Section reads a 4096 byte section at the given offset into the given uint32 slice.
-func (r *Reader) readUint32Section(f io.ReaderAt, dst []uint32, offset int) error {
+func (f *File) readUint32Section(dst []uint32, offset int) error {
 	tmp := sectionPool.Get().(*section)
 	defer tmp.Free()
 
-	if n, err := f.ReadAt(tmp[:], int64(offset)); err != nil {
+	if n, err := f.read.ReadAt(tmp[:], int64(offset)); err != nil {
 		return errors.Wrap("anvil/file: unable to read file header", err)
 	} else if n != SectionSize {
 		return errors.Wrap("anvil/file: Incorrect number of bytes read", io.EOF)

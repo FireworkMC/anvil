@@ -4,9 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"sync"
 
-	"github.com/bits-and-blooms/bitset"
 	"github.com/yehan2002/errors"
 )
 
@@ -20,25 +18,16 @@ const (
 	ErrSize = errors.Error("anvil/file: invalid file size")
 )
 
-// Reader a region file reader
-type Reader struct {
-	mux    sync.RWMutex
-	header *Header
-	used   *bitset.BitSet
-	reader io.ReaderAt
-	dir    *Dir
-}
-
 // Read returns the chunk at the given position
-func (r *Reader) Read(x, z int) (reader io.ReadCloser, err error) {
+func (f *File) Read(x, z int) (reader io.ReadCloser, err error) {
 	if x < 0 || z < 0 || x > 31 || z > 31 {
 		return nil, fmt.Errorf("anvil/file: invalid chunk position")
 	}
 
-	r.mux.RLock()
-	defer r.mux.RUnlock()
+	f.mux.RLock()
+	defer f.mux.RUnlock()
 
-	chunk := r.header.Get(x, z)
+	chunk := f.header.Get(x, z)
 
 	if chunk.Offset == 0 && chunk.Size == 0 {
 		return nil, ErrNotGenerated
@@ -47,7 +36,7 @@ func (r *Reader) Read(x, z int) (reader io.ReadCloser, err error) {
 	offset := int64(chunk.Offset) * SectionSize
 
 	header := [5]byte{}
-	if _, err := r.reader.ReadAt(header[:], offset); err != nil {
+	if _, err := f.read.ReadAt(header[:], offset); err != nil {
 		return nil, errors.Wrap("anvil/file: unable to read header", err)
 	}
 
@@ -63,9 +52,9 @@ func (r *Reader) Read(x, z int) (reader io.ReadCloser, err error) {
 	external := header[4]&externalMask != 0
 
 	if !external {
-		src = io.NopCloser(io.NewSectionReader(r.reader, offset+5, int64(length)))
-	} else if r.dir != nil {
-		if src, err = r.dir.readExternal(x, z); err != nil {
+		src = io.NopCloser(io.NewSectionReader(f.read, offset+5, int64(length)))
+	} else if f.dir != nil {
+		if src, err = f.dir.ReadExternal(x, z); err != nil {
 			return nil, err
 		}
 	} else {
