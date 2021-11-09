@@ -41,16 +41,18 @@ func (a *Anvil) GetFile(rg Region) (f *File, err error) {
 }
 
 // Read reads the chunk data for the given location
-func (a *Anvil) Read(c Chunk) (r io.ReadCloser, err error) {
-	if f, err := a.GetFile(c.Region()); err == nil {
-		r, err = f.Read(uint8(c.X&0x1f), uint8(c.Z&0x1f))
+func (a *Anvil) Read(c Chunk, read io.ReaderFrom) (n int64, err error) {
+	var f *File
+	if f, err = a.GetFile(c.Region()); err == nil {
+		n, err = f.Read(uint8(c.X&0x1f), uint8(c.Z&0x1f), read)
 	}
 	return
 }
 
 // Write writes the chunk data for the given location
 func (a *Anvil) Write(c Chunk, p []byte) (err error) {
-	if f, err := a.GetFile(c.Region()); err == nil {
+	var f *File
+	if f, err = a.GetFile(c.Region()); err == nil {
 		err = f.Write(uint8(c.X&0x1f), uint8(c.Z&0x1f), p)
 	}
 	return

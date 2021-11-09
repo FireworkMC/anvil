@@ -151,3 +151,18 @@ var _ compressor = &noopCompressor{}
 func (n *noopCompressor) Write(p []byte) (int, error) { return n.dst.Write(p) }
 func (n *noopCompressor) Close() error                { return nil }
 func (n *noopCompressor) Reset(w io.Writer)           { n.dst = w }
+
+type muxReader struct {
+	io.ReadCloser
+	mux *sync.RWMutex
+}
+
+func (m *muxReader) Close() (err error) {
+	if m.mux != nil {
+		m.mux.RUnlock()
+		err = m.ReadCloser.Close()
+		*m = muxReader{}
+
+	}
+	return
+}

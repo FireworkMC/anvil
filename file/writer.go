@@ -18,7 +18,7 @@ type File struct {
 	region Region
 	header *Header
 	used   *bitset.BitSet
-	dir    Fs
+	fs     Fs
 	size   int64
 
 	write file
@@ -39,19 +39,20 @@ var _ file = afero.File(nil)
 
 func (f *File) Write(x, z uint8, b []byte) (err error) {
 	if x > 31 || z > 31 {
-		return fmt.Errorf("anvil/file: invalid chunk position")
+		return fmt.Errorf("anvil/file: invalid entry position")
 	}
 
 	if f.write == nil {
 		return fmt.Errorf("anvil/file: file is opened in read-only mode")
 	}
 
+	f.mux.Lock()
+	defer f.mux.Unlock()
+
 	if len(b) == 0 {
-		f.mux.Lock()
 		if _, err = f.growFile(0); err == nil {
 			err = f.updateHeader(x, z, 0, 0)
 		}
-		f.mux.Unlock()
 		return
 	}
 
@@ -68,11 +69,8 @@ func (f *File) Write(x, z uint8, b []byte) (err error) {
 	size := sections(uint(buf.Len()))
 
 	if size > 255 {
-		return f.dir.WriteExternal(f.region.Chunk(x, z), buf)
+		return f.fs.WriteExternal(f.region.Chunk(x, z), buf)
 	}
-
-	f.mux.Lock()
-	defer f.mux.Unlock()
 
 	offset, hasSpace := f.findSpace(size)
 
@@ -83,10 +81,10 @@ func (f *File) Write(x, z uint8, b []byte) (err error) {
 	}
 
 	if err = buf.WriteAt(f.write, int64(offset)*SectionSize, true); err != nil {
-		return errors.Wrap("anvil/file: unable to write chunk data", err)
+		return errors.Wrap("anvil/file: unable to write entry data", err)
 	}
 	if err = f.write.Sync(); err != nil {
-		return errors.Wrap("anvil/file: unable to write chunk data", err)
+		return errors.Wrap("anvil/file: unable to write entry data", err)
 	}
 
 	return f.updateHeader(x, z, offset, uint8(size))
@@ -108,9 +106,16 @@ func (f *File) initCompression() (err error) {
 	return
 }
 
-// Close closes the file
+// Close closes the file.
+// This blocks until all readers returned by `Read` are closed.
 func (f *File) Close() (err error) {
-	// TODO: sync file and use mutex
+	f.mux.Lock()
+	defer f.mux.Unlock()
+	if f.write != nil {
+		if err = f.write.Sync(); err != nil {
+			return err
+		}
+	}
 	return f.close.Close()
 }
 
@@ -152,7 +157,6 @@ func (f *File) updateHeader(x, z uint8, offset uint, size uint8) (err error) {
 // and syncs the changes to disk.
 func (f *File) writeUint32At(v uint32, offset int64) (err error) {
 	var tmp [4]byte
-
 	binary.BigEndian.PutUint32(tmp[:], v)
 	if _, err = f.write.WriteAt(tmp[:], offset); err == nil {
 		err = f.write.Sync()
@@ -161,7 +165,7 @@ func (f *File) writeUint32At(v uint32, offset int64) (err error) {
 	return
 }
 
-// setUsed marks the space used by the given chunk in the `used` bitset as used.
+// setUsed marks the space used by the given entry in the `used` bitset as used.
 func (f *File) setUsed(c *Entry) {
 	end := uint(c.Offset) + uint(c.Size)
 	for i := uint(c.Offset); i < end; i++ {
@@ -173,7 +177,7 @@ func (f *File) setUsed(c *Entry) {
 	}
 }
 
-// clearUsed marks the space used by the given chunk in the `used` bitset as unused.
+// clearUsed marks the space used by the given entry in the `used` bitset as unused.
 func (f *File) clearUsed(c *Entry) {
 	if c.Offset == 0 || c.Size == 0 {
 		return
@@ -188,12 +192,13 @@ func (f *File) clearUsed(c *Entry) {
 	}
 }
 
-var zeroHeader [5]byte
-
+// compress compresses the given byte slice and writes it to a Buffer.
 func (f *File) compress(b []byte) (buf *Buffer, err error) {
 	buf = &Buffer{}
 	buf.CompressMethod(f.cm)
+
 	f.c.Reset(buf)
+
 	if _, err = f.c.Write(b); err == nil {
 		if err = f.c.Close(); err == nil {
 			return buf, nil

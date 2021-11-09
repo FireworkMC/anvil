@@ -18,7 +18,6 @@ func init() {
 var compressionMethods = []CompressMethod{CompressionGzip, CompressionZlib, CompressionNone}
 
 func TestWriteNew(t *testing.T) {
-	t.SkipNow()
 	sections := [1024][]byte{}
 	for i := range sections {
 		sections[i] = bytes.Repeat([]byte{byte(i + 1)}, (i+1)*128)
@@ -29,7 +28,6 @@ func TestWriteNew(t *testing.T) {
 }
 
 func TestWriteNewLarge(t *testing.T) {
-	t.SkipNow()
 	sections := [16][]byte{}
 	for i := range sections {
 		buf := make([]byte, SectionSize*16)
@@ -55,7 +53,7 @@ func testRoundtrip(is is.Is, cm CompressMethod, name string, sections [][]byte) 
 		is(err == nil, "unexpected error")
 		is(n&sectionSizeMask == 0, "file size is not a multiple of `sectionSize`: %d", n)
 
-		r, err := f.Read(uint8(i&0x1f), uint8(i>>5))
+		r, err := f.ReaderFor(uint8(i&0x1f), uint8(i>>5))
 		is(err == nil, "failed to read data: %s", err)
 		data, err := io.ReadAll(r)
 		_ = r.Close()
@@ -66,7 +64,7 @@ func testRoundtrip(is is.Is, cm CompressMethod, name string, sections [][]byte) 
 	f, err = OpenFile(name, false)
 	is(err == nil, "unexpected error occurred while opening anvil file: %s", err)
 	for i, buf := range sections {
-		r, err := f.Read(uint8(i&0x1f), uint8(i>>5))
+		r, err := f.ReaderFor(uint8(i&0x1f), uint8(i>>5))
 		is(err == nil, "failed to read data: %s", err)
 		data, err := io.ReadAll(r)
 		_ = r.Close()

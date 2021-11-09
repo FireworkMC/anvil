@@ -7,7 +7,7 @@ require (
 	github.com/bluele/gcache v0.0.2
 	github.com/klauspost/compress v1.13.6
 	github.com/spf13/afero v1.6.0
-	github.com/yehan2002/errors v1.1.1
+	github.com/yehan2002/errors v1.2.0
 	github.com/yehan2002/fastbytes/v2 v2.0.4
 	github.com/yehan2002/is/v2 v2.2.2
 )

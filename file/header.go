@@ -36,3 +36,9 @@ func (h *Header) clear() { *h = Header{} }
 // Free frees the header and puts it into the pool.
 // Callers must not use the header after calling this.
 func (h *Header) Free() { headerPool.Put(h) }
+
+// Generated returns if the entry is stored in this file.
+func (e *Entry) Generated() bool { return e.Offset != 0 && e.Size != 0 }
+
+// OffsetBytes returns the offset in bytes
+func (e *Entry) OffsetBytes() int64 { return int64(e.Offset) * SectionSize }
