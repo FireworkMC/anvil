@@ -12,14 +12,15 @@ type section [SectionSize]byte
 
 func (b *section) Free() { sectionPool.Put(b) }
 
-type buffer struct {
+// Buffer a reuseable buffer for writing data
+type Buffer struct {
 	length   int64
 	compress CompressMethod
 	buf      []*section
 }
 
 // Write appends data to this buffer
-func (b *buffer) Write(p []byte) (n int, err error) {
+func (b *Buffer) Write(p []byte) (n int, err error) {
 	if b.buf == nil {
 		b.grow()
 		// reserve space for the header
@@ -44,18 +45,18 @@ func (b *buffer) Write(p []byte) (n int, err error) {
 	return n, nil
 }
 
-// CompressionMethod sets the compression method used by the data in the buffer.
+// CompressMethod sets the compression method used by the data in the buffer.
 // This is only used to set the compression byte in the header.
 // Callers must compress the data before writing it to this buffer.
 // If this is not called, DefaultCompression is used.
-func (b *buffer) CompressMethod(c CompressMethod) {
+func (b *Buffer) CompressMethod(c CompressMethod) {
 	b.compress = c
 }
 
-// WriteTo writes this buffer to the given writer at the given position.
+// WriteAt writes this buffer to the given writer at the given position.
 // If header is set, this also writes a 5 byte header at the start of the data
 // that includes the length of the data and the compression method used
-func (b *buffer) WriteTo(w io.WriterAt, off int64, header bool) error {
+func (b *Buffer) WriteAt(w io.WriterAt, off int64, header bool) error {
 	startOffset := 5
 
 	if header {
@@ -86,18 +87,27 @@ func (b *buffer) WriteTo(w io.WriterAt, off int64, header bool) error {
 	return nil
 }
 
+// WriteTo same as `WriteAt` but writes to the start of the given writer
+func (b *Buffer) WriteTo(w io.Writer, header bool) (err error) {
+	return b.WriteAt(&writeAtWrapper{w}, 0, header)
+}
+
 // Free frees the buffer for reuse.
-func (b *buffer) Free() {
+func (b *Buffer) Free() {
 	for _, s := range b.buf {
 		s.Free()
 	}
-	*b = buffer{}
+	*b = Buffer{}
 }
 
 // Len returns the length of the buffer.
 // This includes the length of the header
-func (b *buffer) Len() int { return int(b.length) }
+func (b *Buffer) Len() int { return int(b.length) }
 
-func (b *buffer) grow() {
+func (b *Buffer) grow() {
 	b.buf = append(b.buf, sectionPool.Get().(*section))
 }
+
+type writeAtWrapper struct{ io.Writer }
+
+func (w *writeAtWrapper) WriteAt(p []byte, off int64) (n int, err error) { return w.Writer.Write(p) }

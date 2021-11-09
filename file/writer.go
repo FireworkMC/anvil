@@ -58,7 +58,7 @@ func (f *File) Write(x, z int, b []byte) (err error) {
 		return
 	}
 
-	var buf *buffer
+	var buf *Buffer
 	if buf, err = f.compress(b); err != nil {
 		return errors.Wrap("anvil/file: error compressing data", err)
 	}
@@ -81,7 +81,7 @@ func (f *File) Write(x, z int, b []byte) (err error) {
 		}
 	}
 
-	if err = buf.WriteTo(f.write, int64(offset)*SectionSize, true); err != nil {
+	if err = buf.WriteAt(f.write, int64(offset)*SectionSize, true); err != nil {
 		return errors.Wrap("anvil/file: unable to write chunk data", err)
 	}
 	if err = f.write.Sync(); err != nil {
@@ -183,8 +183,8 @@ func (f *File) clearUsed(c *Entry) {
 
 var zeroHeader [5]byte
 
-func (f *File) compress(b []byte) (buf *buffer, err error) {
-	buf = &buffer{}
+func (f *File) compress(b []byte) (buf *Buffer, err error) {
+	buf = &Buffer{}
 	buf.CompressMethod(f.cm)
 	f.c.Reset(buf)
 	if _, err = f.c.Write(b); err == nil {
