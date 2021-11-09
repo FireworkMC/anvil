@@ -8,11 +8,11 @@ import (
 	"github.com/yehan2002/errors"
 )
 
-// Dir a directory
-type Dir interface {
-	Open(x, z int) (r ReadAtCloser, size int64, readonly bool, err error)
-	ReadExternal(x, z int) (r io.ReadCloser, err error)
-	WriteExternal(x, z int, b *Buffer) (err error)
+// Fs handles opening anvil files.
+type Fs interface {
+	Open(rg Region) (r ReadAtCloser, size int64, readonly bool, err error)
+	ReadExternal(c Chunk) (r io.ReadCloser, err error)
+	WriteExternal(c Chunk, b *Buffer) (err error)
 }
 
 type dir struct{ fs afero.Fs }

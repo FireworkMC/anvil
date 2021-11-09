@@ -27,13 +27,17 @@ func sections(v uint) uint {
 
 var fs afero.Fs = &afero.OsFs{}
 
-// Open opens the given file
-func Open(path string, readonly bool) (w *File, err error) {
+// OpenFile opens the given anvil file.
+// If readonly is set any attempts to modify the file will return an error.
+// If any data is stored in external files, any attempt to read it will return ErrExternal.
+// If an attempt is made to write a data that is over 1MB after compression, ErrExternal will be returned.
+// To allow reading and writing to external files use `Open` instead.
+func OpenFile(path string, readonly bool) (w *File, err error) {
 	r, size, err := openFile(fs, path)
 	if err != nil {
 		return nil, err
 	}
-	return open(r, readonly, size)
+	return open(Region{0, 0}, r, readonly, size)
 }
 
 func openFile(fs afero.Fs, path string) (r ReadAtCloser, size int64, err error) {
@@ -59,7 +63,7 @@ type ReadAtCloser interface {
 	io.Closer
 }
 
-func open(r ReadAtCloser, readonly bool, fileSize int64) (w *File, err error) {
+func open(rg Region, r ReadAtCloser, readonly bool, fileSize int64) (f *File, err error) {
 
 	// check if the file size is 0 or a multiple of 4096
 	if fileSize&sectionSizeMask != 0 || (fileSize != 0 && fileSize < SectionSize*2) {
@@ -67,22 +71,22 @@ func open(r ReadAtCloser, readonly bool, fileSize int64) (w *File, err error) {
 	}
 
 	header := headerPool.Get().(*Header)
-	w = &File{header: header, read: r, close: r, size: fileSize}
+	f = &File{header: header, region: rg, read: r, close: r, size: fileSize}
 	if write, ok := r.(file); !readonly && ok {
-		w.write = write
+		f.write = write
 	}
 
 	if fileSize == 0 { // fast path for empty files
 		header.clear()
-		w.used = bitset.New(Entries)
-		return w, nil
+		f.used = bitset.New(Entries)
+		return f, nil
 	}
 
 	maxSection := fileSize / SectionSize
-	w.used = bitset.New(uint(maxSection))
+	f.used = bitset.New(uint(maxSection))
 
 	var size, timestamps [Entries]uint32
-	if err := w.readHeader(size[:], timestamps[:]); err != nil {
+	if err := f.readHeader(size[:], timestamps[:]); err != nil {
 		return nil, err
 	}
 
@@ -95,17 +99,17 @@ func open(r ReadAtCloser, readonly bool, fileSize int64) (w *File, err error) {
 			if pos > uint32(maxSection) {
 				return nil, fmt.Errorf("anvil/file: invalid chunk data location")
 			}
-			if w.used.Test(uint(pos)) {
+			if f.used.Test(uint(pos)) {
 				return nil, fmt.Errorf("anvil/file: invalid chunk size/location")
 			}
 
-			w.used.Set(uint(pos))
+			f.used.Set(uint(pos))
 		}
 
 		header[i] = c
 	}
 
-	return w, nil
+	return f, nil
 }
 
 // readHeader reads the region file header.

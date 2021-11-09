@@ -15,9 +15,10 @@ import (
 // File is a single anvil region file.
 type File struct {
 	mux    sync.RWMutex
+	region Region
 	header *Header
 	used   *bitset.BitSet
-	dir    *dir
+	dir    Fs
 	size   int64
 
 	write file
@@ -36,8 +37,8 @@ type file interface {
 
 var _ file = afero.File(nil)
 
-func (f *File) Write(x, z int, b []byte) (err error) {
-	if x < 0 || z < 0 || x > 31 || z > 31 {
+func (f *File) Write(x, z uint8, b []byte) (err error) {
+	if x > 31 || z > 31 {
 		return fmt.Errorf("anvil/file: invalid chunk position")
 	}
 
@@ -67,7 +68,7 @@ func (f *File) Write(x, z int, b []byte) (err error) {
 	size := sections(uint(buf.Len()))
 
 	if size > 255 {
-		return f.dir.WriteExternal(x, z, buf)
+		return f.dir.WriteExternal(f.region.Chunk(x, z), buf)
 	}
 
 	f.mux.Lock()
@@ -107,6 +108,12 @@ func (f *File) initCompression() (err error) {
 	return
 }
 
+// Close closes the file
+func (f *File) Close() (err error) {
+	// TODO: sync file and use mutex
+	return f.close.Close()
+}
+
 // growFile grows the file to fit `size` more sections.
 func (f *File) growFile(size uint) (offset uint, err error) {
 	fileSize := f.size
@@ -122,8 +129,8 @@ func (f *File) growFile(size uint) (offset uint, err error) {
 	return
 }
 
-func (f *File) updateHeader(x, z int, offset uint, size uint8) (err error) {
-	headerOffset := int64(x|(z<<5)) << 2
+func (f *File) updateHeader(x, z uint8, offset uint, size uint8) (err error) {
+	headerOffset := int64(x)<<2 | int64(z)<<7
 
 	if err = f.writeUint32At(uint32(offset)<<8|uint32(size), headerOffset); err != nil {
 		return errors.Wrap("anvil/file: unable to update header", err)

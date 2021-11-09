@@ -24,11 +24,11 @@ type Entry struct {
 
 // Get gets the entry at the given x,z coords.
 // If the given x,z values are not between 0 and 31 (inclusive) this panics.
-func (h *Header) Get(x, z int) *Entry {
-	if x < 0 || z < 0 || x > 31 || z > 31 {
+func (h *Header) Get(x, z uint8) *Entry {
+	if x > 31 || z > 31 {
 		panic("invalid position")
 	}
-	return &h[(x&0x1f)|((z&0x1f)<<5)]
+	return &h[uint16(x&0x1f)|(uint16(z&0x1f)<<5)]
 }
 
 func (h *Header) clear() { *h = Header{} }

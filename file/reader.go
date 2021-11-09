@@ -19,8 +19,8 @@ const (
 )
 
 // Read returns the chunk at the given position
-func (f *File) Read(x, z int) (reader io.ReadCloser, err error) {
-	if x < 0 || z < 0 || x > 31 || z > 31 {
+func (f *File) Read(x, z uint8) (reader io.ReadCloser, err error) {
+	if x > 31 || z > 31 {
 		return nil, fmt.Errorf("anvil/file: invalid chunk position")
 	}
 
@@ -55,7 +55,7 @@ func (f *File) Read(x, z int) (reader io.ReadCloser, err error) {
 	if !external {
 		src = io.NopCloser(io.NewSectionReader(f.read, offset+5, int64(length-1)))
 	} else if f.dir != nil {
-		if src, err = f.dir.ReadExternal(x, z); err != nil {
+		if src, err = f.dir.ReadExternal(f.region.Chunk(x, z)); err != nil {
 			return nil, err
 		}
 	} else {

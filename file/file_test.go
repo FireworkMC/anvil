@@ -41,19 +41,19 @@ func TestWriteNewLarge(t *testing.T) {
 
 func testRoundtrip(is is.Is, cm CompressMethod, name string, sections [][]byte) {
 	name = fmt.Sprintf("%s-%s.mca", name, cm.String())
-	f, err := Open(name, false)
+	f, err := OpenFile(name, false)
 	is(err == nil, "unexpected error occurred while creating anvil file: %s", err)
 
 	f.CompressionMethod(cm)
 
 	for i, buf := range sections {
-		f.Write(i&0x1f, i>>5, buf)
+		f.Write(uint8(i&0x1f), uint8(i>>5), buf)
 
 		n, err := f.write.(io.Seeker).Seek(0, io.SeekEnd)
 		is(err == nil, "unexpected error")
 		is(n&sectionSizeMask == 0, "file size is not a multiple of `sectionSize`: %d", n)
 
-		r, err := f.Read(i&0x1f, i>>5)
+		r, err := f.Read(uint8(i&0x1f), uint8(i>>5))
 		is(err == nil, "failed to read data: %s", err)
 		data, err := io.ReadAll(r)
 		_ = r.Close()
@@ -61,10 +61,10 @@ func testRoundtrip(is is.Is, cm CompressMethod, name string, sections [][]byte) 
 		is(bytes.Equal(buf, data), "incorrect value read")
 	}
 	f.close.Close()
-	f, err = Open(name, false)
+	f, err = OpenFile(name, false)
 	is(err == nil, "unexpected error occurred while opening anvil file: %s", err)
 	for i, buf := range sections {
-		r, err := f.Read(i&0x1f, i>>5)
+		r, err := f.Read(uint8(i&0x1f), uint8(i>>5))
 		is(err == nil, "failed to read data: %s", err)
 		data, err := io.ReadAll(r)
 		_ = r.Close()
