@@ -1,75 +1,32 @@
 package file
 
 import (
-	"bytes"
-	"crypto/rand"
-	"fmt"
-	"io"
 	"testing"
 
-	"github.com/spf13/afero"
 	"github.com/yehan2002/is/v2"
 )
 
-func init() {
-	fs = afero.NewCopyOnWriteFs(afero.NewBasePathFs(&afero.OsFs{}, "../testdata"), &afero.MemMapFs{})
-}
+type fileTest struct{}
 
-var compressionMethods = []CompressMethod{CompressionGzip, CompressionZlib, CompressionNone}
+func TestFile(t *testing.T) { is.SuiteP(t, &fileTest{}) }
 
-func TestWriteNew(t *testing.T) {
-	sections := [1024][]byte{}
-	for i := range sections {
-		sections[i] = bytes.Repeat([]byte{byte(i + 1)}, (i+1)*128)
+func (f *fileTest) TestHeader(is is.Is) {
+	var actual [Entries]Entry
+
+	header := headerPool.Get().(*Header)
+	header.clear()
+	defer header.Free()
+
+	is.Equal(header[:], actual[:], "incorrect header clear")
+
+	for x := 0; x < 32; x++ {
+		for z := 0; z < 32; z++ {
+			v := uint32(x)<<16 | uint32(z)
+			header.Get(uint8(x), uint8(z)).Offset = v
+			actual[z*32+x] = Entry{Offset: v}
+		}
 	}
-	for _, method := range compressionMethods {
-		testRoundtrip(is.New(t), method, "write-test-new", sections[:])
-	}
-}
-
-func TestWriteNewLarge(t *testing.T) {
-	sections := [16][]byte{}
-	for i := range sections {
-		buf := make([]byte, SectionSize*16)
-		rand.Read(buf)
-		sections[i] = buf
-	}
-	for _, method := range compressionMethods {
-		testRoundtrip(is.New(t), method, "write-test-new-large", sections[:])
-	}
-}
-
-func testRoundtrip(is is.Is, cm CompressMethod, name string, sections [][]byte) {
-	name = fmt.Sprintf("%s-%s.mca", name, cm.String())
-	f, err := OpenFile(name, false)
-	is(err == nil, "unexpected error occurred while creating anvil file: %s", err)
-
-	f.CompressionMethod(cm)
-
-	for i, buf := range sections {
-		f.Write(uint8(i&0x1f), uint8(i>>5), buf)
-
-		n, err := f.write.(io.Seeker).Seek(0, io.SeekEnd)
-		is(err == nil, "unexpected error")
-		is(n&sectionSizeMask == 0, "file size is not a multiple of `sectionSize`: %d", n)
-
-		r, err := f.Read(uint8(i&0x1f), uint8(i>>5))
-		is(err == nil, "failed to read data: %s", err)
-		data, err := io.ReadAll(r)
-		_ = r.Close()
-		is(err == nil, "failed to read data: %s", err)
-		is(bytes.Equal(buf, data), "incorrect value read")
-	}
-	f.close.Close()
-	f, err = OpenFile(name, false)
-	is(err == nil, "unexpected error occurred while opening anvil file: %s", err)
-	for i, buf := range sections {
-		r, err := f.Read(uint8(i&0x1f), uint8(i>>5))
-		is(err == nil, "failed to read data: %s", err)
-		data, err := io.ReadAll(r)
-		_ = r.Close()
-		is(err == nil, "failed to read data")
-		is(bytes.Equal(buf, data), "incorrect value read")
-	}
-
+	is.Equal(header[:], actual[:], "incorrect header modification")
+	is.Panic(func() { header.Get(32, 0) }, "header did not panic for invalid coords")
+	is.Panic(func() { header.Get(0, 32) }, "header did not panic for invalid coords")
 }

@@ -19,7 +19,8 @@ type Buffer struct {
 	buf      []*section
 }
 
-// Write appends data to this buffer
+// Write appends data to this buffer.
+// This never returns an error.
 func (b *Buffer) Write(p []byte) (n int, err error) {
 	if b.buf == nil {
 		b.grow()
@@ -49,9 +50,7 @@ func (b *Buffer) Write(p []byte) (n int, err error) {
 // This is only used to set the compression byte in the header.
 // Callers must compress the data before writing it to this buffer.
 // If this is not called, DefaultCompression is used.
-func (b *Buffer) CompressMethod(c CompressMethod) {
-	b.compress = c
-}
+func (b *Buffer) CompressMethod(c CompressMethod) { b.compress = c }
 
 // WriteAt writes this buffer to the given writer at the given position.
 // If header is set, this also writes a 5 byte header at the start of the data
@@ -101,12 +100,16 @@ func (b *Buffer) Free() {
 }
 
 // Len returns the length of the buffer.
-// This includes the length of the header
-func (b *Buffer) Len() int { return int(b.length) }
-
-func (b *Buffer) grow() {
-	b.buf = append(b.buf, sectionPool.Get().(*section))
+// This includes the length of the header.
+// If the buffer is completely empty other than the header this returns 0.
+func (b *Buffer) Len() int {
+	if b.length == 5 {
+		return 0
+	}
+	return int(b.length)
 }
+
+func (b *Buffer) grow() { b.buf = append(b.buf, sectionPool.Get().(*section)) }
 
 type writeAtWrapper struct{ io.Writer }
 
