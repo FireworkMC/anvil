@@ -1,4 +1,4 @@
-package file
+package anvil
 
 import (
 	"encoding/binary"
@@ -11,13 +11,13 @@ import (
 const (
 	// ErrExternal returned if the chunk is in an external file.
 	// This error is only returned if the region file was opened as a single file.
-	ErrExternal = errors.Error("anvil/file: chunk is in separate file")
+	ErrExternal = errors.Error("anvil: chunk is in separate file")
 	// ErrNotGenerated returned if the chunk has not been generated yet.
-	ErrNotGenerated = errors.Error("anvil/file: chunk has not been generated")
+	ErrNotGenerated = errors.Error("anvil: chunk has not been generated")
 	// ErrSize returned if the size of the anvil file is not a multiple of 4096.
-	ErrSize = errors.Error("anvil/file: invalid file size")
+	ErrSize = errors.Error("anvil: invalid file size")
 	// ErrCorrupted the given file contains invalid/corrupted data
-	ErrCorrupted = errors.Error("anvil/file: corrupted file")
+	ErrCorrupted = errors.Error("anvil: corrupted file")
 )
 
 const entryHeaderSize = 5
@@ -39,7 +39,7 @@ func (f *File) Read(x, z uint8, r io.ReaderFrom) (n int64, err error) {
 // The returned reader must be closed or any calls to Write will hang forever.
 func (f *File) ReaderFor(x, z uint8) (reader io.ReadCloser, err error) {
 	if x > 31 || z > 31 {
-		return nil, fmt.Errorf("anvil/file: invalid chunk position")
+		return nil, fmt.Errorf("anvil: invalid chunk position")
 	}
 
 	f.mux.RLock()

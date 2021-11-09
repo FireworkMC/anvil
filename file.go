@@ -1,4 +1,4 @@
-package file
+package anvil
 
 import (
 	"fmt"
@@ -52,7 +52,7 @@ func openFile(fs afero.Fs, path string) (r ReadAtCloser, size int64, err error) 
 
 	var f afero.File
 	if f, err = fs.OpenFile(path, os.O_RDWR|os.O_CREATE, 0666); err != nil {
-		return nil, 0, errors.Wrap("anvil/file: unable to open file", err)
+		return nil, 0, errors.Wrap("anvil: unable to open file", err)
 	}
 	return f, fileSize, nil
 }
@@ -97,10 +97,10 @@ func open(rg Region, r ReadAtCloser, readonly bool, fileSize int64) (f *File, er
 		for p := uint32(0); p < uint32(c.Size); p++ {
 			pos := start + p
 			if pos > uint32(maxSection) {
-				return nil, fmt.Errorf("anvil/file: invalid chunk data location")
+				return nil, fmt.Errorf("anvil: invalid chunk data location")
 			}
 			if f.used.Test(uint(pos)) {
-				return nil, fmt.Errorf("anvil/file: invalid chunk size/location")
+				return nil, fmt.Errorf("anvil: invalid chunk size/location")
 			}
 
 			f.used.Set(uint(pos))
@@ -126,9 +126,9 @@ func (f *File) readUint32Section(dst []uint32, offset int) error {
 	defer tmp.Free()
 
 	if n, err := f.read.ReadAt(tmp[:], int64(offset)); err != nil {
-		return errors.Wrap("anvil/file: unable to read file header", err)
+		return errors.Wrap("anvil: unable to read file header", err)
 	} else if n != SectionSize {
-		return errors.Wrap("anvil/file: Incorrect number of bytes read", io.EOF)
+		return errors.Wrap("anvil: Incorrect number of bytes read", io.EOF)
 	}
 
 	fastbytes.BigEndian.ToU32(tmp[:], dst)

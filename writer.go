@@ -1,4 +1,4 @@
-package file
+package anvil
 
 import (
 	"encoding/binary"
@@ -39,11 +39,11 @@ var _ file = afero.File(nil)
 
 func (f *File) Write(x, z uint8, b []byte) (err error) {
 	if x > 31 || z > 31 {
-		return fmt.Errorf("anvil/file: invalid entry position")
+		return fmt.Errorf("anvil: invalid entry position")
 	}
 
 	if f.write == nil {
-		return fmt.Errorf("anvil/file: file is opened in read-only mode")
+		return fmt.Errorf("anvil: file is opened in read-only mode")
 	}
 
 	f.mux.Lock()
@@ -62,7 +62,7 @@ func (f *File) Write(x, z uint8, b []byte) (err error) {
 
 	var buf *Buffer
 	if buf, err = f.compress(b); err != nil {
-		return errors.Wrap("anvil/file: error compressing data", err)
+		return errors.Wrap("anvil: error compressing data", err)
 	}
 	defer buf.Free()
 
@@ -76,15 +76,15 @@ func (f *File) Write(x, z uint8, b []byte) (err error) {
 
 	if !hasSpace {
 		if offset, err = f.growFile(size); err != nil {
-			return errors.Wrap("anvil/file: unable to grow file", err)
+			return errors.Wrap("anvil: unable to grow file", err)
 		}
 	}
 
 	if err = buf.WriteAt(f.write, int64(offset)*SectionSize, true); err != nil {
-		return errors.Wrap("anvil/file: unable to write entry data", err)
+		return errors.Wrap("anvil: unable to write entry data", err)
 	}
 	if err = f.write.Sync(); err != nil {
-		return errors.Wrap("anvil/file: unable to write entry data", err)
+		return errors.Wrap("anvil: unable to write entry data", err)
 	}
 
 	return f.updateHeader(x, z, offset, uint8(size))
@@ -138,7 +138,7 @@ func (f *File) updateHeader(x, z uint8, offset uint, size uint8) (err error) {
 	headerOffset := int64(x)<<2 | int64(z)<<7
 
 	if err = f.writeUint32At(uint32(offset)<<8|uint32(size), headerOffset); err != nil {
-		return errors.Wrap("anvil/file: unable to update header", err)
+		return errors.Wrap("anvil: unable to update header", err)
 	}
 
 	entry := f.header.Get(x, z)
@@ -148,7 +148,7 @@ func (f *File) updateHeader(x, z uint8, offset uint, size uint8) (err error) {
 	f.setUsed(entry)
 
 	if err = f.writeUint32At(uint32(entry.Timestamp), headerOffset+SectionSize); err != nil {
-		return errors.Wrap("anvil/file: unable to update timestamp", err)
+		return errors.Wrap("anvil: unable to update timestamp", err)
 	}
 	return
 }

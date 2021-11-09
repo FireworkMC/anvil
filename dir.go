@@ -1,4 +1,4 @@
-package file
+package anvil
 
 import (
 	"fmt"
@@ -29,7 +29,7 @@ func (d *dir) Open(x, z int) (r ReadAtCloser, size int64, readonly bool, err err
 func (d *dir) ReadExternal(x, z int) (r io.ReadCloser, err error) {
 	var f afero.File
 	if f, err = fs.Open(fmt.Sprintf("r.%d.%d.mcc", x, z)); err != nil {
-		return nil, errors.Wrap("anvil/file: unable to open external file", err)
+		return nil, errors.Wrap("anvil: unable to open external file", err)
 	}
 	return f, nil
 }
@@ -38,7 +38,7 @@ func (d *dir) ReadExternal(x, z int) (r io.ReadCloser, err error) {
 func (d *dir) WriteExternal(x, z int, b *Buffer) (err error) {
 	var f afero.File
 	if f, err = fs.Create(fmt.Sprintf("r.%d.%d.mcc", x, z)); err != nil {
-		return errors.Wrap("anvil/file: unable to create external file", err)
+		return errors.Wrap("anvil: unable to create external file", err)
 	}
-	return errors.Wrap("anvil/file: unable to write external file", b.WriteTo(f, false))
+	return errors.Wrap("anvil: unable to write external file", b.WriteTo(f, false))
 }

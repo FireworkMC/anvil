@@ -1,4 +1,4 @@
-package file
+package anvil
 
 import (
 	"io"
@@ -81,7 +81,7 @@ func (c CompressMethod) decompressor(src io.ReadCloser) (reader io.ReadCloser, e
 	default:
 		err = errors.Error("unsupported compression method")
 	}
-	return reader, errors.Wrap("anvil/file: unable to decompress", err)
+	return reader, errors.Wrap("anvil: unable to decompress", err)
 }
 
 // compressor returns a compressor for the compression method.
@@ -96,7 +96,7 @@ func (c CompressMethod) compressor() (compressor, error) {
 	case CompressionNone:
 		return &noopCompressor{}, nil
 	default:
-		return nil, errors.Error("anvil/file: unsupported compression method")
+		return nil, errors.Error("anvil: unsupported compression method")
 	}
 }
 

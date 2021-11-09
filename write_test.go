@@ -1,4 +1,4 @@
-package file
+package anvil
 
 import (
 	"bytes"
@@ -12,7 +12,7 @@ import (
 )
 
 func init() {
-	fs = afero.NewCopyOnWriteFs(afero.NewBasePathFs(&afero.OsFs{}, "../testdata"), &afero.MemMapFs{})
+	fs = afero.NewCopyOnWriteFs(afero.NewBasePathFs(&afero.OsFs{}, "./testdata"), &afero.MemMapFs{})
 }
 
 var compressionMethods = []CompressMethod{CompressionGzip, CompressionZlib, CompressionNone}
