@@ -72,7 +72,7 @@ func open(rg Region, r ReadAtCloser, readonly bool, fileSize int64) (f *File, er
 
 	header := headerPool.Get().(*Header)
 	f = &File{header: header, region: rg, read: r, close: r, size: fileSize}
-	if write, ok := r.(file); !readonly && ok {
+	if write, ok := r.(Writer); !readonly && ok {
 		f.write = write
 	}
 

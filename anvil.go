@@ -20,22 +20,22 @@ func (r *Region) Chunk(x, z uint8) Chunk { return Chunk{r.X<<5 | int32(x), r.Z<<
 
 // Anvil todo
 type Anvil struct {
-	fs    Fs
-	cache *gcache.ARC
+	fs      Fs
+	regions map[Region]*File
 }
 
 // GetFile gets the anvil file for the given coords
 func (a *Anvil) GetFile(rg Region) (f *File, err error) {
-	i, err := a.cache.Get(rg)
-	if err != nil {
+	var ok bool
+
+	if f, ok = a.regions[rg]; ok {
 		r, size, readonly, err := a.fs.Open(rg)
 		if err != nil {
 			return nil, err
 		}
-		f, err = open(rg, r, readonly, size)
-		a.cache.Set(r, f)
-	} else {
-		f = i.(*File)
+		if f, err = open(rg, r, readonly, size); err == nil {
+			a.regions[rg] = f
+		}
 	}
 	return
 }
@@ -58,11 +58,11 @@ func (a *Anvil) Write(c Chunk, p []byte) (err error) {
 	return
 }
 
-func (a *Anvil) cacheEvict(key interface{}, value interface{}) {
-	// FIXME: handle the error
-	_ = value.(*File).Close()
+func (a *Anvil) cacheLoader(key interface{}) (value interface{}, err error) {
+
+	return
 }
 
 func newArcCache(size int, evict gcache.EvictedFunc) *gcache.ARC {
-	return gcache.New(size).ARC().EvictedFunc(evict).Build().(*gcache.ARC)
+	return gcache.New(size).ARC().EvictedFunc(evict).LoaderFunc(nil).Build().(*gcache.ARC)
 }

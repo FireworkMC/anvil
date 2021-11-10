@@ -8,7 +8,6 @@ import (
 	"time"
 
 	"github.com/bits-and-blooms/bitset"
-	"github.com/spf13/afero"
 	"github.com/yehan2002/errors"
 )
 
@@ -21,21 +20,13 @@ type File struct {
 	fs     Fs
 	size   int64
 
-	write file
+	write Writer
 	read  io.ReaderAt
 	close io.Closer
 
 	c  compressor
 	cm CompressMethod
 }
-
-type file interface {
-	io.WriterAt
-	Sync() error
-	Truncate(size int64) error
-}
-
-var _ file = afero.File(nil)
 
 func (f *File) Write(x, z uint8, b []byte) (err error) {
 	if x > 31 || z > 31 {

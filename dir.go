@@ -3,6 +3,7 @@ package anvil
 import (
 	"fmt"
 	"io"
+	"os"
 
 	"github.com/spf13/afero"
 	"github.com/yehan2002/errors"
@@ -14,6 +15,17 @@ type Fs interface {
 	ReadExternal(c Chunk) (r io.ReadCloser, err error)
 	WriteExternal(c Chunk, b *Buffer) (err error)
 }
+
+// Writer a writer to modify an anvil file.
+// The value returned by Fs.Open should implement this interface if the anvil file is modifiable
+type Writer interface {
+	io.WriterAt
+	Sync() error
+	Truncate(size int64) error
+}
+
+var _ Writer = afero.File(nil)
+var _ Writer = &os.File{}
 
 type dir struct{ fs afero.Fs }
 
