@@ -10,7 +10,7 @@ import (
 
 type bufferTest struct{}
 
-func TestBuffer(t *testing.T) { is.Suite(t, &bufferTest{}) }
+func TestBuffer(t *testing.T) { is.SuiteP(t, &bufferTest{}) }
 
 func (b *bufferTest) TestBufferWrite(is is.Is) {
 	buf := Buffer{}

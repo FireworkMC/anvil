@@ -77,8 +77,8 @@ func (f *File) ReaderFor(x, z uint8) (reader io.ReadCloser, err error) {
 func (f *File) readerForEntry(x, z uint8, offset, length int64, external bool) (src io.ReadCloser, err error) {
 	if !external {
 		return io.NopCloser(io.NewSectionReader(f.read, offset+entryHeaderSize, length)), nil
-	} else if f.fs != nil {
-		return f.fs.ReadExternal(f.region.Chunk(x, z))
+	} else if f.anvil != nil {
+		return f.anvil.fs.ReadExternal(f.region.Chunk(x, z))
 	}
 	return nil, ErrExternal
 }

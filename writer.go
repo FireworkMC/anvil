@@ -13,11 +13,15 @@ import (
 
 // File is a single anvil region file.
 type File struct {
+	*file
+}
+
+type file struct {
 	mux    sync.RWMutex
 	region Region
 	header *Header
 	used   *bitset.BitSet
-	fs     Fs
+	anvil  *Anvil
 	size   int64
 
 	write Writer
@@ -60,7 +64,10 @@ func (f *File) Write(x, z uint8, b []byte) (err error) {
 	size := sections(uint(buf.Len()))
 
 	if size > 255 {
-		return f.fs.WriteExternal(f.region.Chunk(x, z), buf)
+		if f.anvil != nil {
+			return f.anvil.fs.WriteExternal(f.region.Chunk(x, z), buf)
+		}
+		return ErrExternal
 	}
 
 	offset, hasSpace := f.findSpace(size)

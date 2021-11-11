@@ -1,7 +1,6 @@
 package anvil
 
 import (
-	"fmt"
 	"io"
 	"os"
 
@@ -33,11 +32,15 @@ var fs afero.Fs = &afero.OsFs{}
 // If an attempt is made to write a data that is over 1MB after compression, ErrExternal will be returned.
 // To allow reading and writing to external files use `Open` instead.
 func OpenFile(path string, readonly bool) (w *File, err error) {
-	r, size, err := openFile(fs, path)
-	if err != nil {
-		return nil, err
+	var r ReadAtCloser
+	var size int64
+	if r, size, err = openFile(fs, path); err == nil {
+		var f *file
+		if f, err = open(Region{0, 0}, r, readonly, size); err == nil {
+			return &File{f}, nil
+		}
 	}
-	return open(Region{0, 0}, r, readonly, size)
+	return
 }
 
 func openFile(fs afero.Fs, path string) (r ReadAtCloser, size int64, err error) {
@@ -63,7 +66,7 @@ type ReadAtCloser interface {
 	io.Closer
 }
 
-func open(rg Region, r ReadAtCloser, readonly bool, fileSize int64) (f *File, err error) {
+func open(rg Region, r ReadAtCloser, readonly bool, fileSize int64) (f *file, err error) {
 
 	// check if the file size is 0 or a multiple of 4096
 	if fileSize&sectionSizeMask != 0 || (fileSize != 0 && fileSize < SectionSize*2) {
@@ -71,7 +74,7 @@ func open(rg Region, r ReadAtCloser, readonly bool, fileSize int64) (f *File, er
 	}
 
 	header := headerPool.Get().(*Header)
-	f = &File{header: header, region: rg, read: r, close: r, size: fileSize}
+	f = &file{header: header, region: rg, read: r, close: r, size: fileSize}
 	if write, ok := r.(Writer); !readonly && ok {
 		f.write = write
 	}
@@ -97,10 +100,10 @@ func open(rg Region, r ReadAtCloser, readonly bool, fileSize int64) (f *File, er
 		for p := uint32(0); p < uint32(c.Size); p++ {
 			pos := start + p
 			if pos > uint32(maxSection) {
-				return nil, fmt.Errorf("anvil: invalid chunk data location")
+				return nil, errors.CauseStr(ErrCorrupted, "invalid chunk data location")
 			}
 			if f.used.Test(uint(pos)) {
-				return nil, fmt.Errorf("anvil: invalid chunk size/location")
+				return nil, errors.CauseStr(ErrCorrupted, "invalid chunk size/location")
 			}
 
 			f.used.Set(uint(pos))
@@ -113,7 +116,7 @@ func open(rg Region, r ReadAtCloser, readonly bool, fileSize int64) (f *File, er
 }
 
 // readHeader reads the region file header.
-func (f *File) readHeader(size, timestamps []uint32) (err error) {
+func (f *file) readHeader(size, timestamps []uint32) (err error) {
 	if err = f.readUint32Section(size[:], 0); err == nil {
 		err = f.readUint32Section(timestamps[:], SectionSize)
 	}
@@ -121,7 +124,7 @@ func (f *File) readHeader(size, timestamps []uint32) (err error) {
 }
 
 // readUint32Section reads a 4096 byte section at the given offset into the given uint32 slice.
-func (f *File) readUint32Section(dst []uint32, offset int) error {
+func (f *file) readUint32Section(dst []uint32, offset int) error {
 	tmp := sectionPool.Get().(*section)
 	defer tmp.Free()
 
