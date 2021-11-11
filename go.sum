@@ -23,8 +23,8 @@ github.com/yehan2002/errors v1.2.0/go.mod h1:vd/cZvWo6tzv1v1UdN1akENX8CeaZd4nkqz
 github.com/yehan2002/fastbytes/v2 v2.0.4 h1:zAFQzSyWjLH9PF7J+U+MtTjXEpUoy+Cr5RxOzjHx1T0=
 github.com/yehan2002/fastbytes/v2 v2.0.4/go.mod h1:O8A9sdbFcL0GrektyguiOgqQD6XMGz7JdJ/HkVTXGl4=
 github.com/yehan2002/is/v2 v2.2.1/go.mod h1:Ooc4XDj0FKiPv2q1eQb4ngg01LGimyeARTkIWdYeyFA=
-github.com/yehan2002/is/v2 v2.2.2 h1:EEdwNCtuCO+XY4W40/KC0yuH+5D0i6hM8aGajLnXcs4=
-github.com/yehan2002/is/v2 v2.2.2/go.mod h1:vzFI2yrwm9IijztPzTS01u7PfFOTK97A7/2s7Tk0A+w=
+github.com/yehan2002/is/v2 v2.2.3 h1:mu6sPOMBGDfznkjaPqiJWEglZySChsQBaSOq3go6uxw=
+github.com/yehan2002/is/v2 v2.2.3/go.mod h1:vzFI2yrwm9IijztPzTS01u7PfFOTK97A7/2s7Tk0A+w=
 github.com/yuin/goldmark v1.2.1/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 golang.org/x/arch v0.0.0-20210405154355-08b684f594a5/go.mod h1:flIaEI6LNU6xOCD5PaJvn9wGP0agmIOqjrtsKGRguv4=
 golang.org/x/crypto v0.0.0-20190308221718-c2843e01d9a2/go.mod h1:djNgcEr1/C05ACkg1iLfiJU5Ep61QUkGW8qpdssI0+w=
@@ -44,6 +44,8 @@ golang.org/x/sys v0.0.0-20210119212857-b64e53b001e4/go.mod h1:h1NjWce9XRLGQEsW7w
 golang.org/x/sys v0.0.0-20210403161142-5e06dd20ab57/go.mod h1:h1NjWce9XRLGQEsW7wpKNCjG9DtNlClVuFLEZdDNbEs=
 golang.org/x/sys v0.0.0-20211102192858-4dd72447c267 h1:7zYaz3tjChtpayGDzu6H0hDAUM5zIGA2XW7kRNgQ0jc=
 golang.org/x/sys v0.0.0-20211102192858-4dd72447c267/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
+golang.org/x/sys v0.0.0-20211110154304-99a53858aa08 h1:WecRHqgE09JBkh/584XIE6PMz5KKE/vER4izNUi30AQ=
+golang.org/x/sys v0.0.0-20211110154304-99a53858aa08/go.mod h1:oPkhp1MJrh7nUepCBck5+mAzfO9JrbApNNgaTdGDITg=
 golang.org/x/text v0.3.0/go.mod h1:NqM8EUOU14njkJ3fqMW+pc6Ldnwhi/IjpwHt7yyuwOQ=
 golang.org/x/text v0.3.3/go.mod h1:5Zoc/QRtKVWzQhOtBMvqHzDpF6irO9z98xDceosuGiQ=
 golang.org/x/text v0.3.7 h1:olpwvP2KacW1ZWvsR7uQhoyTYvKAupfQrRGBFM352Gk=
