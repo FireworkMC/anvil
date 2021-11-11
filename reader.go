@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"runtime"
 
 	"github.com/yehan2002/errors"
 )
@@ -36,7 +37,8 @@ func (f *File) Read(x, z uint8, r io.ReaderFrom) (n int64, err error) {
 }
 
 // ReaderFor returns a reader that reads the chunk at the given position.
-// The returned reader must be closed or any calls to Write will hang forever.
+// The returned reader must be closed or any calls to Write may hang forever.
+// `Read` should be used in most cases.
 func (f *File) ReaderFor(x, z uint8) (reader io.ReadCloser, err error) {
 	if x > 31 || z > 31 {
 		return nil, fmt.Errorf("anvil: invalid chunk position")
@@ -59,7 +61,9 @@ func (f *File) ReaderFor(x, z uint8) (reader io.ReadCloser, err error) {
 	if length, method, external, err = f.readEntryHeader(entry); err == nil {
 		if reader, err = f.readerForEntry(x, z, offset, length, external); err == nil {
 			if reader, err = method.decompressor(reader); err == nil {
-				return &muxReader{ReadCloser: reader, mux: &f.mux}, nil
+				mr := &muxReader{ReadCloser: reader, mux: &f.mux}
+				runtime.SetFinalizer(mr, func(m *muxReader) { m.Close() })
+				return mr, nil
 			}
 		}
 	}

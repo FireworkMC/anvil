@@ -162,7 +162,6 @@ func (m *muxReader) Close() (err error) {
 		m.mux.RUnlock()
 		err = m.ReadCloser.Close()
 		*m = muxReader{}
-
 	}
 	return
 }
