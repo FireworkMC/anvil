@@ -3,6 +3,7 @@ package anvil
 import (
 	"io"
 	"os"
+	"sync"
 
 	"github.com/bits-and-blooms/bitset"
 	"github.com/spf13/afero"
@@ -10,21 +11,23 @@ import (
 	"github.com/yehan2002/fastbytes/v2"
 )
 
-const (
-	// Entries the number of entries in a region file
-	Entries = 32 * 32
-	// SectionSize the size of a section
-	SectionSize     = Entries * 4 // 1 << sectionShift
-	sectionSizeMask = SectionSize - 1
-	sectionShift    = 12
-)
+// File is a single anvil region file.
+type File struct {
+	mux    sync.RWMutex
+	region Region
+	header *Header
+	used   *bitset.BitSet
+	anvil  *Anvil
+	size   int64
 
-// sections returns the minimum number of sections to store the given number of bytes
-func sections(v uint) uint {
-	return (v + sectionSizeMask) / SectionSize
+	write Writer
+	read  ReadAtCloser
+
+	close sync.Once
+
+	c  compressor
+	cm CompressMethod
 }
-
-var fs afero.Fs = &afero.OsFs{}
 
 // OpenFile opens the given anvil file.
 // If readonly is set any attempts to modify the file will return an error.
@@ -35,7 +38,7 @@ func OpenFile(path string, readonly bool) (f *File, err error) {
 	var r ReadAtCloser
 	var size int64
 	if r, size, err = openFile(fs, path); err == nil {
-		f, err = open(Region{0, 0}, r, readonly, size)
+		f, err = ReadFile(Region{0, 0}, r, readonly, size)
 	}
 	return
 }
@@ -63,7 +66,10 @@ type ReadAtCloser interface {
 	io.Closer
 }
 
-func open(rg Region, r ReadAtCloser, readonly bool, fileSize int64) (f *File, err error) {
+// ReadFile reads an anvil file from the given ReadAtCloser.
+// This has the same limitations as `OpenFile`.
+// If fileSize is 0, no attempt is made to read any headers.
+func ReadFile(rg Region, r ReadAtCloser, readonly bool, fileSize int64) (f *File, err error) {
 
 	// check if the file size is 0 or a multiple of 4096
 	if fileSize&sectionSizeMask != 0 || (fileSize != 0 && fileSize < SectionSize*2) {
@@ -72,8 +78,13 @@ func open(rg Region, r ReadAtCloser, readonly bool, fileSize int64) (f *File, er
 
 	header := headerPool.Get().(*Header)
 	f = &File{header: header, region: rg, read: r, size: fileSize}
-	if write, ok := r.(Writer); !readonly && ok {
-		f.write = write
+
+	if !readonly {
+		var canWrite bool
+		f.write, canWrite = r.(Writer)
+		if !canWrite {
+			return nil, errors.Error("anvil: ReadFile: `r` must implement anvil.Writer to be opened in write mode")
+		}
 	}
 
 	if fileSize == 0 { // fast path for empty files

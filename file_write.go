@@ -3,30 +3,10 @@ package anvil
 import (
 	"encoding/binary"
 	"fmt"
-	"sync"
 	"time"
 
-	"github.com/bits-and-blooms/bitset"
 	"github.com/yehan2002/errors"
 )
-
-// File is a single anvil region file.
-type File struct {
-	mux    sync.RWMutex
-	region Region
-	header *Header
-	used   *bitset.BitSet
-	anvil  *Anvil
-	size   int64
-
-	write Writer
-	read  ReadAtCloser
-
-	close sync.Once
-
-	c  compressor
-	cm CompressMethod
-}
 
 func (f *File) Write(x, z uint8, b []byte) (err error) {
 	if x > 31 || z > 31 {
