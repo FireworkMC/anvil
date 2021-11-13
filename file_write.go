@@ -13,12 +13,17 @@ func (f *File) Write(x, z uint8, b []byte) (err error) {
 		return fmt.Errorf("anvil: invalid entry position")
 	}
 
+	f.mux.Lock()
+	defer f.mux.Unlock()
+
+	if f.header == nil {
+		f.mux.Unlock()
+		return ErrClosed
+	}
+
 	if f.write == nil {
 		return fmt.Errorf("anvil: file is opened in read-only mode")
 	}
-
-	f.mux.Lock()
-	defer f.mux.Unlock()
 
 	if len(b) == 0 {
 		if _, err = f.growFile(0); err == nil {
@@ -41,7 +46,7 @@ func (f *File) Write(x, z uint8, b []byte) (err error) {
 
 	if size > 255 {
 		if f.anvil != nil {
-			return f.anvil.fs.WriteExternal(f.region.Chunk(x, z), buf)
+			return f.anvil.fs.WriteExternal(f.pos.Chunk(x, z), buf)
 		}
 		return ErrExternal
 	}
@@ -86,12 +91,15 @@ func (f *File) Close() (err error) {
 	f.mux.Lock()
 	defer f.mux.Unlock()
 	f.close.Do(func() {
+		f.header.Free()
+		f.header = nil
 		if f.write != nil {
 			if err = f.write.Sync(); err != nil {
 				return
 			}
 		}
 		err = f.read.Close()
+
 	})
 
 	return

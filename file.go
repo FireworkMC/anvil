@@ -14,12 +14,13 @@ import (
 // File is a single anvil region file.
 type File struct {
 	mux    sync.RWMutex
-	region Region
 	header *Header
 	used   *bitset.BitSet
-	anvil  *Anvil
-	size   int64
 
+	pos   Region
+	anvil *Anvil
+
+	size  int64
 	write Writer
 	read  ReadAtCloser
 
@@ -77,7 +78,7 @@ func ReadFile(rg Region, r ReadAtCloser, readonly bool, fileSize int64) (f *File
 	}
 
 	header := headerPool.Get().(*Header)
-	f = &File{header: header, region: rg, read: r, size: fileSize}
+	f = &File{header: header, pos: rg, read: r, size: fileSize}
 
 	if !readonly {
 		var canWrite bool

@@ -93,13 +93,13 @@ func (a *Cache) free(f *cachedFile) (err error) {
 				}
 			}
 
-			evicted := a.lru.Add(f.region, f.file)
+			evicted := a.lru.Add(f.pos, f.file)
 			if evicted {
 				// This should never happen since we manually evicted the oldest element
 				panic("anvil.Cache: File was incorrectly evicted")
 			}
 
-			delete(a.inUse, f.region)
+			delete(a.inUse, f.pos)
 		}
 	}
 	return

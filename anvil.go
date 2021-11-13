@@ -15,6 +15,8 @@ const (
 	ErrSize = errors.Error("anvil: invalid file size")
 	// ErrCorrupted the given file contains invalid/corrupted data
 	ErrCorrupted = errors.Error("anvil: corrupted file")
+	// ErrClosed the given file has already been closed
+	ErrClosed = errors.Error("anvil: file closed")
 )
 
 const (
