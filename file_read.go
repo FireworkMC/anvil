@@ -4,7 +4,6 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
-	"runtime"
 
 	"github.com/yehan2002/errors"
 )
@@ -16,34 +15,21 @@ var zeroHeader [entryHeaderSize]byte
 // Read reads the entry at the given position to `r`.
 // `r` must not retain the reader passed to it.
 func (f *File) Read(x, z uint8, r io.ReaderFrom) (n int64, err error) {
-	var src io.ReadCloser
-	if src, err = f.ReaderFor(x, z); err == nil {
-		n, err = r.ReadFrom(src)
-		src.Close()
-	}
-	return 0, err
-}
-
-// ReaderFor returns a reader that reads the chunk at the given position.
-// The returned reader must be closed or any calls to Write may hang forever.
-// `Read` should be used in most cases.
-func (f *File) ReaderFor(x, z uint8) (reader io.ReadCloser, err error) {
 	if x > 31 || z > 31 {
-		return nil, fmt.Errorf("anvil: invalid chunk position")
+		return 0, fmt.Errorf("anvil: invalid chunk position")
 	}
 
 	f.mux.RLock()
+	defer f.mux.RUnlock()
 
 	if f.header == nil {
-		f.mux.RUnlock()
-		return nil, ErrClosed
+		return 0, ErrClosed
 	}
 
 	entry := f.header.Get(x, z)
 
 	if !entry.Generated() {
-		f.mux.RUnlock()
-		return nil, ErrNotGenerated
+		return 0, ErrNotGenerated
 	}
 
 	offset := entry.OffsetBytes()
@@ -52,17 +38,19 @@ func (f *File) ReaderFor(x, z uint8) (reader io.ReadCloser, err error) {
 	var external bool
 
 	if length, method, external, err = f.readEntryHeader(entry); err == nil {
-		if reader, err = f.readerForEntry(x, z, offset, length, external); err == nil {
-			if reader, err = method.decompressor(reader); err == nil {
-				mr := &muxReader{ReadCloser: reader, mux: &f.mux}
-				runtime.SetFinalizer(mr, func(m *muxReader) { m.Close() })
-				return mr, nil
+		var src io.ReadCloser
+		if src, err = f.readerForEntry(x, z, offset, length, external); err == nil {
+			if src, err = method.decompressor(src); err == nil {
+				n, err = r.ReadFrom(src)
+				closeErr := src.Close()
+				if err == nil {
+					err = closeErr
+				}
 			}
 		}
 	}
 
-	f.mux.RUnlock()
-	return nil, err
+	return 0, err
 }
 
 // readerForEntry returns a reader that reads the given entry.
