@@ -3,7 +3,6 @@ package anvil
 import (
 	"encoding/binary"
 	"fmt"
-	"io"
 	"sync"
 	"time"
 
@@ -13,10 +12,6 @@ import (
 
 // File is a single anvil region file.
 type File struct {
-	*file
-}
-
-type file struct {
 	mux    sync.RWMutex
 	region Region
 	header *Header
@@ -25,8 +20,9 @@ type file struct {
 	size   int64
 
 	write Writer
-	read  io.ReaderAt
-	close io.Closer
+	read  ReadAtCloser
+
+	close sync.Once
 
 	c  compressor
 	cm CompressMethod
@@ -109,12 +105,16 @@ func (f *File) initCompression() (err error) {
 func (f *File) Close() (err error) {
 	f.mux.Lock()
 	defer f.mux.Unlock()
-	if f.write != nil {
-		if err = f.write.Sync(); err != nil {
-			return err
+	f.close.Do(func() {
+		if f.write != nil {
+			if err = f.write.Sync(); err != nil {
+				return
+			}
 		}
-	}
-	return f.close.Close()
+		err = f.read.Close()
+	})
+
+	return
 }
 
 // growFile grows the file to fit `size` more sections.

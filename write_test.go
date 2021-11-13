@@ -60,7 +60,7 @@ func testRoundtrip(is is.Is, cm CompressMethod, name string, sections [][]byte) 
 		is(err == nil, "failed to read data: %s", err)
 		is(bytes.Equal(buf, data), "incorrect value read")
 	}
-	f.close.Close()
+	f.Close()
 	f, err = OpenFile(name, false)
 	is(err == nil, "unexpected error occurred while opening anvil file: %s", err)
 	for i, buf := range sections {
