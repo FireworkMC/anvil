@@ -9,30 +9,15 @@ import (
 )
 
 func (f *File) Write(x, z uint8, b []byte) (err error) {
-	if x > 31 || z > 31 {
-		return fmt.Errorf("anvil: invalid entry position")
+	if len(b) == 0 {
+		return f.Remove(x, z)
 	}
 
 	f.mux.Lock()
 	defer f.mux.Unlock()
 
-	if f.header == nil {
-		return ErrClosed
-	}
-
-	if f.write == nil {
-		return fmt.Errorf("anvil: file is opened in read-only mode")
-	}
-
-	if len(b) == 0 {
-		if _, err = f.growFile(0); err == nil {
-			err = f.updateHeader(x, z, 0, 0)
-		}
-		return
-	}
-
-	if err = f.initCompression(); err != nil {
-		return
+	if err = f.checkWrite(x, z); err != nil {
+		return err
 	}
 
 	var buf *Buffer
@@ -68,6 +53,23 @@ func (f *File) Write(x, z uint8, b []byte) (err error) {
 	return f.updateHeader(x, z, offset, uint8(size))
 }
 
+// Remove removes the given entry from the file.
+func (f *File) Remove(x, z uint8) (err error) {
+	f.mux.Lock()
+	defer f.mux.Unlock()
+
+	entry := f.header.Get(x, z)
+	f.clearUsed(entry)
+
+	if err = f.checkWrite(x, z); err == nil {
+		if _, err = f.growFile(0); err == nil {
+			err = f.updateHeader(x, z, 0, 0)
+		}
+	}
+
+	return
+}
+
 // CompressionMethod sets the compression method to be used by the writer
 func (f *File) CompressionMethod(m CompressMethod) (err error) {
 	f.mux.Lock()
@@ -77,6 +79,25 @@ func (f *File) CompressionMethod(m CompressMethod) (err error) {
 		f.cm, f.c = m, c
 	}
 	return
+}
+
+// checkWrite checks if the write is valid.
+// This checks if x,z are within bounds
+// and if the file was opened for writing and has not been closed.
+func (f *File) checkWrite(x, z uint8) error {
+	if x > 31 || z > 31 {
+		return fmt.Errorf("anvil: invalid entry position")
+	}
+
+	if f.header == nil {
+		return ErrClosed
+	}
+
+	if f.write == nil {
+		return fmt.Errorf("anvil: file is opened in read-only mode")
+	}
+
+	return nil
 }
 
 func (f *File) initCompression() (err error) {
@@ -182,9 +203,12 @@ func (f *File) clearUsed(c *Entry) {
 
 // compress compresses the given byte slice and writes it to a Buffer.
 func (f *File) compress(b []byte) (buf *Buffer, err error) {
+	if err = f.initCompression(); err != nil {
+		return nil, err
+	}
+
 	buf = &Buffer{}
 	buf.CompressMethod(f.cm)
-
 	f.c.Reset(buf)
 
 	if _, err = f.c.Write(b); err == nil {
