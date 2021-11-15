@@ -9,11 +9,10 @@ import (
 	"github.com/yehan2002/errors"
 )
 
-// Fs handles opening anvil files.
-type Fs interface {
-	Open(rg Region) (r ReadAtCloser, size int64, readonly bool, err error)
-	ReadExternal(c Chunk) (r io.ReadCloser, err error)
-	WriteExternal(c Chunk, b *Buffer) (err error)
+// Reader an interface that implements io.ReadAt and io.Closer
+type Reader interface {
+	io.ReaderAt
+	io.Closer
 }
 
 // Writer a writer to modify an anvil file.
@@ -24,13 +23,20 @@ type Writer interface {
 	Truncate(size int64) error
 }
 
+// Fs handles opening anvil files.
+type Fs interface {
+	Open(rg Region) (r Reader, size int64, readonly bool, err error)
+	ReadExternal(c Chunk) (r io.ReadCloser, err error)
+	WriteExternal(c Chunk, b *Buffer) (err error)
+}
+
 var _ Writer = afero.File(nil)
 var _ Writer = &os.File{}
 
 type dir struct{ fs afero.Fs }
 
 // Open opens the given region file
-func (d *dir) Open(x, z int) (r ReadAtCloser, size int64, readonly bool, err error) {
+func (d *dir) Open(x, z int) (r Reader, size int64, readonly bool, err error) {
 	if r, size, err = openFile(d.fs, fmt.Sprintf("r.%d.%d.mca", x>>5, z>>5)); err == nil {
 		return r, size, false, nil
 	}

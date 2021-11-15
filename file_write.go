@@ -17,7 +17,6 @@ func (f *File) Write(x, z uint8, b []byte) (err error) {
 	defer f.mux.Unlock()
 
 	if f.header == nil {
-		f.mux.Unlock()
 		return ErrClosed
 	}
 
@@ -71,6 +70,8 @@ func (f *File) Write(x, z uint8, b []byte) (err error) {
 
 // CompressionMethod sets the compression method to be used by the writer
 func (f *File) CompressionMethod(m CompressMethod) (err error) {
+	f.mux.Lock()
+	defer f.mux.Unlock()
 	var c compressor
 	if c, err = m.compressor(); err == nil {
 		f.cm, f.c = m, c
@@ -80,17 +81,18 @@ func (f *File) CompressionMethod(m CompressMethod) (err error) {
 
 func (f *File) initCompression() (err error) {
 	if f.cm == 0 {
-		return f.CompressionMethod(CompressionZlib)
+		f.cm = DefaultCompression
+		f.c, err = f.cm.compressor()
 	}
 	return
 }
 
 // Close closes the file.
-// This blocks until all readers returned by `Read` are closed.
+// This blocks until all reads have completed
 func (f *File) Close() (err error) {
 	f.mux.Lock()
 	defer f.mux.Unlock()
-	f.close.Do(func() {
+	if !f.closed {
 		f.header.Free()
 		f.header = nil
 		if f.write != nil {
@@ -99,8 +101,8 @@ func (f *File) Close() (err error) {
 			}
 		}
 		err = f.read.Close()
-
-	})
+		f.closed = true
+	}
 
 	return
 }

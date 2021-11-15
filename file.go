@@ -22,9 +22,9 @@ type File struct {
 
 	size  int64
 	write Writer
-	read  ReadAtCloser
+	read  Reader
 
-	close sync.Once
+	closed bool
 
 	c  compressor
 	cm CompressMethod
@@ -36,7 +36,7 @@ type File struct {
 // If an attempt is made to write a data that is over 1MB after compression, ErrExternal will be returned.
 // To allow reading and writing to external files use `Open` instead.
 func OpenFile(path string, readonly bool) (f *File, err error) {
-	var r ReadAtCloser
+	var r Reader
 	var size int64
 	if r, size, err = openFile(fs, path); err == nil {
 		f, err = ReadFile(Region{0, 0}, r, readonly, size)
@@ -44,7 +44,7 @@ func OpenFile(path string, readonly bool) (f *File, err error) {
 	return
 }
 
-func openFile(fs afero.Fs, path string) (r ReadAtCloser, size int64, err error) {
+func openFile(fs afero.Fs, path string) (r Reader, size int64, err error) {
 	var fileSize int64
 	if info, err := fs.Stat(path); err != nil {
 		if !os.IsNotExist(err) {
@@ -61,16 +61,10 @@ func openFile(fs afero.Fs, path string) (r ReadAtCloser, size int64, err error) 
 	return f, fileSize, nil
 }
 
-// ReadAtCloser an interface that implements io.ReadAt and io.Closer
-type ReadAtCloser interface {
-	io.ReaderAt
-	io.Closer
-}
-
 // ReadFile reads an anvil file from the given ReadAtCloser.
 // This has the same limitations as `OpenFile`.
 // If fileSize is 0, no attempt is made to read any headers.
-func ReadFile(rg Region, r ReadAtCloser, readonly bool, fileSize int64) (f *File, err error) {
+func ReadFile(rg Region, r Reader, readonly bool, fileSize int64) (f *File, err error) {
 
 	// check if the file size is 0 or a multiple of 4096
 	if fileSize&sectionSizeMask != 0 || (fileSize != 0 && fileSize < SectionSize*2) {
