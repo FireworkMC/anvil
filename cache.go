@@ -6,6 +6,7 @@ import (
 	"sync/atomic"
 
 	"github.com/hashicorp/golang-lru/simplelru"
+	"github.com/spf13/afero"
 	"github.com/yehan2002/errors"
 )
 
@@ -66,7 +67,7 @@ func (a *Cache) Write(entryX, entryZ int32, p []byte) (err error) {
 	return
 }
 
-// File opens the anvil file at rgX,rgZ.
+// File opens the anvil file at rgX, rgZ.
 // Callers must close the returned file for it to be removed from the cache.
 func (a *Cache) File(rgX, rgZ int32) (f *CachedAnvil, err error) {
 	c, err := a.get(rgX, rgZ)
@@ -146,6 +147,23 @@ func (a *Cache) getFile(rg Region) (f *cachedAnvil, ok bool) {
 	f, ok = a.inUse[rg]
 	if ok {
 		atomic.AddInt32(&f.useCount, 1)
+	}
+	return
+}
+
+// Open opens the given directory.
+func Open(path string, readonly bool, size int) (c *Cache, err error) {
+	if _, err = fs.Stat(path); err == nil {
+		return OpenFs(NewFs(afero.NewBasePathFs(fs, path)), readonly, size)
+	}
+	return
+}
+
+// OpenFs opens the given directory.
+func OpenFs(fs *Fs, readonly bool, size int) (c *Cache, err error) {
+	cache := Cache{fs: fs, inUse: map[Region]*cachedAnvil{}, lruSize: size}
+	if cache.lru, err = simplelru.NewLRU(size, nil); err == nil {
+		return &cache, nil
 	}
 	return
 }
