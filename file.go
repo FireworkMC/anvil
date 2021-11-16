@@ -92,7 +92,7 @@ func ReadFile(rg Region, r Reader, readonly bool, fileSize int64) (f *File, err 
 	f.used = bitset.New(uint(maxSection))
 
 	var size, timestamps [Entries]uint32
-	if err := f.readHeader(size[:], timestamps[:]); err != nil {
+	if err = f.readHeader(size[:], timestamps[:]); err != nil {
 		return nil, err
 	}
 

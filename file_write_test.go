@@ -8,6 +8,7 @@ import (
 	"testing"
 
 	"github.com/spf13/afero"
+	"github.com/spf13/afero/mem"
 	"github.com/yehan2002/is/v2"
 )
 
@@ -18,9 +19,9 @@ func init() {
 var compressionMethods = []CompressMethod{CompressionGzip, CompressionZlib, CompressionNone}
 
 func TestWriteNew(t *testing.T) {
-	sections := [1024][]byte{}
+	sections := [512][]byte{}
 	for i := range sections {
-		sections[i] = bytes.Repeat([]byte{byte(i + 1)}, (i+1)*128)
+		sections[i] = bytes.Repeat([]byte{byte(i + 1)}, (i+1)*256)
 	}
 	for _, method := range compressionMethods {
 		testRoundtrip(is.New(t), method, "write-test-new", sections[:])
@@ -41,7 +42,9 @@ func TestWriteNewLarge(t *testing.T) {
 
 func testRoundtrip(is is.Is, cm CompressMethod, name string, sections [][]byte) {
 	name = fmt.Sprintf("%s-%s.mca", name, cm.String())
-	f, err := OpenFile(name, false)
+	file := mem.NewFileHandle(mem.CreateFile(name))
+
+	f, err := ReadFile(Region{0, 0}, file, false, 0)
 	is(err == nil, "unexpected error occurred while creating anvil file: %s", err)
 
 	f.CompressionMethod(cm)
@@ -61,8 +64,8 @@ func testRoundtrip(is is.Is, cm CompressMethod, name string, sections [][]byte) 
 		is(bytes.Equal(buf, bb.Bytes()), "incorrect value read")
 		bb.Reset()
 	}
-	f.Close()
-	f, err = OpenFile(name, false)
+
+	f, err = ReadFile(Region{0, 0}, file, false, file.Info().Size())
 	is(err == nil, "unexpected error occurred while opening anvil file: %s", err)
 	for i, buf := range sections {
 		_, err = f.Read(uint8(i&0x1f), uint8(i>>5), &bb)
