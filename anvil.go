@@ -8,15 +8,15 @@ import (
 const (
 	// ErrExternal returned if the chunk is in an external file.
 	// This error is only returned if the region file was opened as a single file.
-	ErrExternal = errors.Error("anvil: chunk is in separate file")
+	ErrExternal = errors.Const("anvil: chunk is in separate file")
 	// ErrNotGenerated returned if the chunk has not been generated yet.
-	ErrNotGenerated = errors.Error("anvil: chunk has not been generated")
+	ErrNotGenerated = errors.Const("anvil: chunk has not been generated")
 	// ErrSize returned if the size of the anvil file is not a multiple of 4096.
-	ErrSize = errors.Error("anvil: invalid file size")
+	ErrSize = errors.Const("anvil: invalid file size")
 	// ErrCorrupted the given file contains invalid/corrupted data
-	ErrCorrupted = errors.Error("anvil: corrupted file")
+	ErrCorrupted = errors.Const("anvil: corrupted file")
 	// ErrClosed the given file has already been closed
-	ErrClosed = errors.Error("anvil: file closed")
+	ErrClosed = errors.Const("anvil: file closed")
 )
 
 const (
