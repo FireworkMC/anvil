@@ -42,7 +42,7 @@ type Anvil struct {
 	header *Header
 
 	pos Region
-	dir *Dir
+	fs  *Fs
 
 	size  int64
 	write writer
@@ -63,21 +63,25 @@ func OpenAnvil(path string, readonly bool) (f *Anvil, err error) {
 	var r reader
 	var size int64
 	if r, size, err = openFile(fs, path); err == nil {
-		f, err = NewAnvil(Region{0, 0}, r, readonly, size)
+		f, err = NewAnvil(Region{0, 0}, NewFs(fs), r, readonly, size)
 	}
 	return
 }
 
 // NewAnvil reads an anvil file from the given ReadAtCloser.
-// This has the same limitations as `OpenFile`.
+// This has the same limitations as `OpenFile` if `fs` is nil.
 // If fileSize is 0, no attempt is made to read any headers.
-func NewAnvil(rg Region, r reader, readonly bool, fileSize int64) (a *Anvil, err error) {
+func NewAnvil(rg Region, fs *Fs, r reader, readonly bool, fileSize int64) (a *Anvil, err error) {
 	// check if the file size is 0 or a multiple of 4096
 	if fileSize&sectionSizeMask != 0 || (fileSize != 0 && fileSize < SectionSize*2) {
 		return nil, ErrSize
 	}
 
-	anvil := &Anvil{header: newHeader(), pos: rg, read: r, size: fileSize}
+	if fs != nil && fs.fs == nil {
+		return nil, errors.New("anvil: invalid anvil.Fs provided")
+	}
+
+	anvil := &Anvil{header: newHeader(), fs: fs, pos: rg, read: r, size: fileSize}
 
 	if !readonly {
 		var canWrite bool
@@ -173,9 +177,9 @@ func (a *Anvil) Write(x, z uint8, b []byte) (err error) {
 	size := sections(uint(buf.Len()))
 
 	if size > 255 {
-		if a.dir != nil {
+		if a.fs != nil {
 			cx, cz := a.pos.Chunk(x, z)
-			return a.dir.fs.writeExternal(cx, cz, buf)
+			return a.fs.writeExternal(cx, cz, buf)
 		}
 		return ErrExternal
 	}
@@ -294,8 +298,8 @@ func (a *Anvil) readHeader(maxSection uint32) (err error) {
 func (a *Anvil) readerForEntry(x, z uint8, offset, length int64, external bool) (src io.ReadCloser, err error) {
 	if !external {
 		return io.NopCloser(io.NewSectionReader(a.read, offset+entryHeaderSize, length)), nil
-	} else if a.dir != nil {
-		return a.dir.fs.readExternal(a.pos.Chunk(x, z))
+	} else if a.fs != nil {
+		return a.fs.readExternal(a.pos.Chunk(x, z))
 	}
 	return nil, ErrExternal
 }

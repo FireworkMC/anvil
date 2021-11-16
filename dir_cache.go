@@ -33,13 +33,15 @@ func (c *CachedAnvil) Close() (err error) {
 	return
 }
 
-// Cache a cached version of `Dir`.
+// Cache a anvil file cache.
 type Cache struct {
-	dir   *Dir
+	fs    *Fs
 	inUse map[Region]*cachedAnvil
 
 	lru     *simplelru.LRU
 	lruSize int
+
+	readonly bool
 
 	mux sync.RWMutex
 }
@@ -48,6 +50,7 @@ type Cache struct {
 func (a *Cache) Read(entryX, entryZ int32, read io.ReaderFrom) (n int64, err error) {
 	var f *cachedAnvil
 	if f, err = a.get(entryX>>5, entryZ>>5); err == nil {
+		defer a.free(f)
 		n, err = f.Read(uint8(entryX&0x1f), uint8(entryZ&0x1f), read)
 	}
 	return
@@ -57,9 +60,20 @@ func (a *Cache) Read(entryX, entryZ int32, read io.ReaderFrom) (n int64, err err
 func (a *Cache) Write(entryX, entryZ int32, p []byte) (err error) {
 	var f *cachedAnvil
 	if f, err = a.get(entryX>>5, entryZ>>5); err == nil {
+		defer a.free(f)
 		err = f.Write(uint8(entryX&0x1f), uint8(entryZ&0x1f), p)
 	}
 	return
+}
+
+// File opens the anvil file at rgX,rgZ.
+// Callers must close the returned file for it to be removed from the cache.
+func (a *Cache) File(rgX, rgZ int32) (f *CachedAnvil, err error) {
+	c, err := a.get(rgX, rgZ)
+	if err != nil {
+		return nil, err
+	}
+	return &CachedAnvil{cachedAnvil: c}, nil
 }
 
 // get gets the anvil get for the given coords
@@ -79,7 +93,11 @@ func (a *Cache) get(rgX, rgZ int32) (f *cachedAnvil, err error) {
 				a.lru.Remove(rg)
 				file = v.(*Anvil)
 			} else { // read file from the disk
-				file, err = a.dir.File(rg)
+				var r reader
+				var size int64
+				if r, size, err = a.fs.open(rg.x, rg.z); err == nil {
+					file, err = NewAnvil(rg, a.fs, r, a.readonly, size)
+				}
 			}
 
 			if err == nil {
