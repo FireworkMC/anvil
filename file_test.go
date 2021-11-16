@@ -13,11 +13,11 @@ func TestFile(t *testing.T) { is.SuiteP(t, &fileTest{}) }
 func (f *fileTest) TestHeader(is is.Is) {
 	var actual [Entries]Entry
 
-	header := headerPool.Get().(*Header)
+	header := newHeader()
 	header.clear()
 	defer header.Free()
 
-	is.Equal(header[:], actual[:], "incorrect header clear")
+	is.Equal(header.entries[:], actual[:], "incorrect header clear")
 
 	for x := 0; x < 32; x++ {
 		for z := 0; z < 32; z++ {
@@ -26,7 +26,7 @@ func (f *fileTest) TestHeader(is is.Is) {
 			actual[z*32+x] = Entry{Offset: v}
 		}
 	}
-	is.Equal(header[:], actual[:], "incorrect header modification")
+	is.Equal(header.entries[:], actual[:], "incorrect header modification")
 	is.Panic(func() { header.Get(32, 0) }, "header did not panic for invalid coords")
 	is.Panic(func() { header.Get(0, 32) }, "header did not panic for invalid coords")
 }

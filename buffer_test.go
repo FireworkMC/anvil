@@ -8,6 +8,8 @@ import (
 	"github.com/yehan2002/is/v2"
 )
 
+var zeroHeader [entryHeaderSize]byte
+
 type bufferTest struct{}
 
 func TestBuffer(t *testing.T) { is.SuiteP(t, &bufferTest{}) }

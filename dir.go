@@ -1,63 +1,44 @@
 package anvil
 
 import (
-	"fmt"
-	"io"
-	"os"
-
+	"github.com/hashicorp/golang-lru/simplelru"
 	"github.com/spf13/afero"
-	"github.com/yehan2002/errors"
 )
 
-// Reader an interface that implements io.ReadAt and io.Closer
-type Reader interface {
-	io.ReaderAt
-	io.Closer
+// Dir handles an entire directory containing anvil files.
+// This makes no attempt to synchronize file access or cache reads.
+// Most user should use `Cache` instead.
+type Dir struct {
+	fs       *Fs
+	readonly bool
 }
 
-// Writer a writer to modify an anvil file.
-// The value returned by Fs.Open should implement this interface if the anvil file is modifiable
-type Writer interface {
-	io.WriterAt
-	Sync() error
-	Truncate(size int64) error
-}
-
-// Fs handles opening anvil files.
-type Fs interface {
-	Open(rg Region) (r Reader, size int64, readonly bool, err error)
-	ReadExternal(c Chunk) (r io.ReadCloser, err error)
-	WriteExternal(c Chunk, b *Buffer) (err error)
-}
-
-var _ Writer = afero.File(nil)
-var _ Writer = &os.File{}
-var _ Fs = &dir{}
-
-type dir struct{ fs afero.Fs }
-
-// Open opens the given region file
-func (d *dir) Open(rg Region) (r Reader, size int64, readonly bool, err error) {
-	if r, size, err = openFile(d.fs, fmt.Sprintf("r.%d.%d.mca", rg.X>>5, rg.Z>>5)); err == nil {
-		return r, size, false, nil
+// File gets the anvil file for the given coords
+func (a *Dir) File(rg Region) (f *Anvil, err error) {
+	r, size, err := a.fs.Open(rg.x, rg.z)
+	if err != nil {
+		return
 	}
-	return nil, 0, false, err
+	if f, err = NewAnvil(rg, r, a.readonly, size); err == nil {
+		f.dir = a
+	}
+	return
 }
 
-// ReadExternal reads an external .mcc file
-func (d *dir) ReadExternal(c Chunk) (r io.ReadCloser, err error) {
-	var f afero.File
-	if f, err = fs.Open(fmt.Sprintf("r.%d.%d.mcc", c.X, c.Z)); err != nil {
-		return nil, errors.Wrap("anvil: unable to open external file", err)
+// Open opens the given directory.
+func Open(path string, readonly bool) (*Dir, error) {
+	if _, err := osFs.Stat(path); err != nil {
+		return nil, err
 	}
-	return f, nil
+	dir := &Fs{afero.NewBasePathFs(osFs, path)}
+	return &Dir{fs: dir, readonly: readonly}, nil
 }
 
-// WriteExternal writes to an external .mcc file
-func (d *dir) WriteExternal(c Chunk, b *Buffer) (err error) {
-	var f afero.File
-	if f, err = fs.Create(fmt.Sprintf("r.%d.%d.mcc", c.X, c.Z)); err != nil {
-		return errors.Wrap("anvil: unable to create external file", err)
+// Cached returns a cached version of `Dir`.
+func Cached(d *Dir, size int) (*Cache, error) {
+	lru, err := simplelru.NewLRU(size, nil)
+	if err == nil {
+		return &Cache{dir: d, inUse: map[Region]*cachedAnvil{}, lru: lru, lruSize: size}, nil
 	}
-	return errors.Wrap("anvil: unable to write external file", b.WriteTo(f, false))
+	return nil, err
 }

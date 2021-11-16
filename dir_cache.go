@@ -13,11 +13,11 @@ type anvil = Anvil
 
 // CachedAnvil a cached anvil file
 type CachedAnvil struct {
-	*cachedFile
+	*cachedAnvil
 	closer sync.Once
 }
 
-type cachedFile struct {
+type cachedAnvil struct {
 	*anvil
 	cache *Cache
 
@@ -29,14 +29,14 @@ type cachedFile struct {
 // Close closes the file.
 // Calling any methods after calling this will cause a panic.
 func (c *CachedAnvil) Close() (err error) {
-	c.closer.Do(func() { err = c.cache.free(c.cachedFile); c.cachedFile = nil })
+	c.closer.Do(func() { err = c.cache.free(c.cachedAnvil); c.cachedAnvil = nil })
 	return
 }
 
 // Cache a cached version of `Dir`.
 type Cache struct {
-	anvil *Dir
-	inUse map[Region]*cachedFile
+	dir   *Dir
+	inUse map[Region]*cachedAnvil
 
 	lru     *simplelru.LRU
 	lruSize int
@@ -44,8 +44,27 @@ type Cache struct {
 	mux sync.RWMutex
 }
 
+// Read reads the chunk data for the given location
+func (a *Cache) Read(entryX, entryZ int32, read io.ReaderFrom) (n int64, err error) {
+	var f *cachedAnvil
+	if f, err = a.get(entryX>>5, entryZ>>5); err == nil {
+		n, err = f.Read(uint8(entryX&0x1f), uint8(entryZ&0x1f), read)
+	}
+	return
+}
+
+// Write writes the chunk data for the given location
+func (a *Cache) Write(entryX, entryZ int32, p []byte) (err error) {
+	var f *cachedAnvil
+	if f, err = a.get(entryX>>5, entryZ>>5); err == nil {
+		err = f.Write(uint8(entryX&0x1f), uint8(entryZ&0x1f), p)
+	}
+	return
+}
+
 // get gets the anvil get for the given coords
-func (a *Cache) get(rg Region) (f *cachedFile, err error) {
+func (a *Cache) get(rgX, rgZ int32) (f *cachedAnvil, err error) {
+	rg := Region{rgX, rgZ}
 	a.mux.RLock()
 	f, ok := a.getFile(rg)
 	a.mux.RUnlock()
@@ -60,11 +79,11 @@ func (a *Cache) get(rg Region) (f *cachedFile, err error) {
 				a.lru.Remove(rg)
 				file = v.(*Anvil)
 			} else { // read file from the disk
-				file, err = a.anvil.File(rg)
+				file, err = a.dir.File(rg)
 			}
 
 			if err == nil {
-				f = &cachedFile{anvil: file, cache: a, useCount: 1}
+				f = &cachedAnvil{anvil: file, cache: a, useCount: 1}
 				a.inUse[rg] = f
 			}
 		}
@@ -73,7 +92,7 @@ func (a *Cache) get(rg Region) (f *cachedFile, err error) {
 	return
 }
 
-func (a *Cache) free(f *cachedFile) (err error) {
+func (a *Cache) free(f *cachedAnvil) (err error) {
 	a.mux.RLock()
 	newCount := atomic.AddInt32(&f.useCount, -1)
 	a.mux.RUnlock()
@@ -105,28 +124,10 @@ func (a *Cache) free(f *cachedFile) (err error) {
 	return
 }
 
-func (a *Cache) getFile(rg Region) (f *cachedFile, ok bool) {
+func (a *Cache) getFile(rg Region) (f *cachedAnvil, ok bool) {
 	f, ok = a.inUse[rg]
 	if ok {
 		atomic.AddInt32(&f.useCount, 1)
-	}
-	return
-}
-
-// Read reads the chunk data for the given location
-func (a *Cache) Read(c Chunk, read io.ReaderFrom) (n int64, err error) {
-	var f *cachedFile
-	if f, err = a.get(c.Region()); err == nil {
-		n, err = f.Read(uint8(c.X&0x1f), uint8(c.Z&0x1f), read)
-	}
-	return
-}
-
-// Write writes the chunk data for the given location
-func (a *Cache) Write(c Chunk, p []byte) (err error) {
-	var f *cachedFile
-	if f, err = a.get(c.Region()); err == nil {
-		err = f.Write(uint8(c.X&0x1f), uint8(c.Z&0x1f), p)
 	}
 	return
 }
