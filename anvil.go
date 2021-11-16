@@ -45,8 +45,8 @@ type Anvil struct {
 	dir *Dir
 
 	size  int64
-	write Writer
-	read  Reader
+	write writer
+	read  reader
 
 	closed bool
 
@@ -60,9 +60,9 @@ type Anvil struct {
 // If an attempt is made to write a data that is over 1MB after compression, ErrExternal will be returned.
 // To allow reading and writing to external files use `Open` instead.
 func OpenAnvil(path string, readonly bool) (f *Anvil, err error) {
-	var r Reader
+	var r reader
 	var size int64
-	if r, size, err = openFile(osFs, path); err == nil {
+	if r, size, err = openFile(fs, path); err == nil {
 		f, err = NewAnvil(Region{0, 0}, r, readonly, size)
 	}
 	return
@@ -71,7 +71,7 @@ func OpenAnvil(path string, readonly bool) (f *Anvil, err error) {
 // NewAnvil reads an anvil file from the given ReadAtCloser.
 // This has the same limitations as `OpenFile`.
 // If fileSize is 0, no attempt is made to read any headers.
-func NewAnvil(rg Region, r Reader, readonly bool, fileSize int64) (a *Anvil, err error) {
+func NewAnvil(rg Region, r reader, readonly bool, fileSize int64) (a *Anvil, err error) {
 	// check if the file size is 0 or a multiple of 4096
 	if fileSize&sectionSizeMask != 0 || (fileSize != 0 && fileSize < SectionSize*2) {
 		return nil, ErrSize
@@ -81,7 +81,7 @@ func NewAnvil(rg Region, r Reader, readonly bool, fileSize int64) (a *Anvil, err
 
 	if !readonly {
 		var canWrite bool
-		anvil.write, canWrite = r.(Writer)
+		anvil.write, canWrite = r.(writer)
 		if !canWrite {
 			return nil, errors.Error("anvil: ReadFile: `r` must implement anvil.Writer to be opened in write mode")
 		}
@@ -164,7 +164,7 @@ func (a *Anvil) Write(x, z uint8, b []byte) (err error) {
 	}
 
 	// compress the given buffer
-	var buf *Buffer
+	var buf *buffer
 	if buf, err = a.compress(b); err != nil {
 		return errors.Wrap("anvil: error compressing data", err)
 	}
@@ -175,7 +175,7 @@ func (a *Anvil) Write(x, z uint8, b []byte) (err error) {
 	if size > 255 {
 		if a.dir != nil {
 			cx, cz := a.pos.Chunk(x, z)
-			return a.dir.fs.WriteExternal(cx, cz, buf)
+			return a.dir.fs.writeExternal(cx, cz, buf)
 		}
 		return ErrExternal
 	}
@@ -295,7 +295,7 @@ func (a *Anvil) readerForEntry(x, z uint8, offset, length int64, external bool) 
 	if !external {
 		return io.NopCloser(io.NewSectionReader(a.read, offset+entryHeaderSize, length)), nil
 	} else if a.dir != nil {
-		return a.dir.fs.ReadExternal(a.pos.Chunk(x, z))
+		return a.dir.fs.readExternal(a.pos.Chunk(x, z))
 	}
 	return nil, ErrExternal
 }
@@ -385,7 +385,7 @@ func (a *Anvil) writeUint32At(v uint32, offset int64) (err error) {
 }
 
 // compress compresses the given byte slice and writes it to a Buffer.
-func (a *Anvil) compress(b []byte) (buf *Buffer, err error) {
+func (a *Anvil) compress(b []byte) (buf *buffer, err error) {
 	if a.cm == 0 {
 		a.cm = DefaultCompression
 		if a.c, err = a.cm.compressor(); err != nil {
@@ -393,7 +393,7 @@ func (a *Anvil) compress(b []byte) (buf *Buffer, err error) {
 		}
 	}
 
-	buf = &Buffer{}
+	buf = &buffer{}
 	buf.CompressMethod(a.cm)
 	a.c.Reset(buf)
 

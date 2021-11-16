@@ -13,7 +13,7 @@ import (
 )
 
 func init() {
-	osFs = afero.NewCopyOnWriteFs(afero.NewBasePathFs(&afero.OsFs{}, "./testdata"), &afero.MemMapFs{})
+	fs = afero.NewCopyOnWriteFs(afero.NewBasePathFs(&afero.OsFs{}, "./testdata"), &afero.MemMapFs{})
 }
 
 var compressionMethods = []CompressMethod{CompressionGzip, CompressionZlib, CompressionNone}

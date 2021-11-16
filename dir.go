@@ -15,7 +15,7 @@ type Dir struct {
 
 // File gets the anvil file for the given coords
 func (a *Dir) File(rg Region) (f *Anvil, err error) {
-	r, size, err := a.fs.Open(rg.x, rg.z)
+	r, size, err := a.fs.open(rg.x, rg.z)
 	if err != nil {
 		return
 	}
@@ -27,10 +27,10 @@ func (a *Dir) File(rg Region) (f *Anvil, err error) {
 
 // Open opens the given directory.
 func Open(path string, readonly bool) (*Dir, error) {
-	if _, err := osFs.Stat(path); err != nil {
+	if _, err := fs.Stat(path); err != nil {
 		return nil, err
 	}
-	dir := &Fs{afero.NewBasePathFs(osFs, path)}
+	dir := &Fs{afero.NewBasePathFs(fs, path)}
 	return &Dir{fs: dir, readonly: readonly}, nil
 }
 

@@ -15,7 +15,7 @@ type bufferTest struct{}
 func TestBuffer(t *testing.T) { is.SuiteP(t, &bufferTest{}) }
 
 func (b *bufferTest) TestBufferWrite(is is.Is) {
-	buf := Buffer{}
+	buf := buffer{}
 	defer buf.Free()
 
 	data := []byte{1, 2, 3, 4}
@@ -31,7 +31,7 @@ func (b *bufferTest) TestBufferWrite(is is.Is) {
 }
 
 func (b *bufferTest) TestBufferWriteLarge(is is.Is) {
-	buf := Buffer{}
+	buf := buffer{}
 	defer buf.Free()
 	byteBuffer := bytes.Buffer{}
 
@@ -56,7 +56,7 @@ func (b *bufferTest) TestBufferWriteLarge(is is.Is) {
 func (b *bufferTest) TestHeader(is is.Is) {
 	var u32 = binary.BigEndian.Uint32
 
-	buf := Buffer{}
+	buf := buffer{}
 	testData := []byte{0}
 	bytes := bytes.Buffer{}
 
@@ -85,7 +85,7 @@ func (b *bufferTest) setAllSection(s *section, v byte) {
 }
 
 func (b *bufferTest) TestBufferLength(is is.Is) {
-	buf := Buffer{}
+	buf := buffer{}
 	defer buf.Free()
 
 	is(buf.Len() == 0, "buffer returned incorrect length")
