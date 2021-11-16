@@ -6,7 +6,7 @@ import (
 	"github.com/bits-and-blooms/bitset"
 )
 
-var headerPool = sync.Pool{New: func() interface{} { return &[Entries]Entry{} }}
+var headerPool = sync.Pool{New: func() interface{} { return &[entries]Entry{} }}
 
 // Region the position of a Region file
 type Region struct{ x, z int32 }
@@ -15,7 +15,7 @@ type Region struct{ x, z int32 }
 func (r *Region) Chunk(x, z uint8) (int32, int32) { return r.x<<5 | int32(x), r.z<<5 | int32(z) }
 
 // sections returns the minimum number of sections to store the given number of bytes
-func sections(v uint) uint { return (v + sectionSizeMask) / SectionSize }
+func sections(v uint) uint { return (v + sectionSizeMask) / sectionSize }
 
 // Entry an entry in the region file
 type Entry struct {
@@ -34,11 +34,11 @@ type Entry struct {
 func (e *Entry) Generated() bool { return e.Offset != 0 && e.Size != 0 }
 
 // OffsetBytes returns the offset in bytes
-func (e *Entry) OffsetBytes() int64 { return int64(e.Offset) * SectionSize }
+func (e *Entry) OffsetBytes() int64 { return int64(e.Offset) * sectionSize }
 
 // Header the header of the region file.
 type Header struct {
-	entries *[Entries]Entry
+	entries *[entries]Entry
 	used    *bitset.BitSet
 }
 
@@ -51,7 +51,7 @@ func (h *Header) Get(x, z uint8) *Entry {
 	return &h.entries[uint16(x&0x1f)|(uint16(z&0x1f)<<5)]
 }
 
-func (h *Header) clear() { *h.entries = [Entries]Entry{} }
+func (h *Header) clear() { *h.entries = [entries]Entry{} }
 
 // Set updates the entry at x,z and the given marks the
 // space used by the given entry in the `used` bitset as used.
@@ -130,4 +130,4 @@ func (h *Header) FindSpace(size uint) (offset uint, found bool) {
 // Callers must not use the header after calling this.
 func (h *Header) Free() { headerPool.Put(h.entries) }
 
-func newHeader() *Header { return &Header{entries: headerPool.Get().(*[Entries]Entry)} }
+func newHeader() *Header { return &Header{entries: headerPool.Get().(*[entries]Entry)} }

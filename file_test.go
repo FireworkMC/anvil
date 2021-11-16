@@ -11,7 +11,7 @@ type fileTest struct{}
 func TestFile(t *testing.T) { is.SuiteP(t, &fileTest{}) }
 
 func (f *fileTest) TestHeader(is is.Is) {
-	var actual [Entries]Entry
+	var actual [entries]Entry
 
 	header := newHeader()
 	header.clear()

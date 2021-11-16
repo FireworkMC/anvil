@@ -8,7 +8,7 @@ import (
 
 var sectionPool = sync.Pool{New: func() interface{} { return &section{} }}
 
-type section [SectionSize]byte
+type section [sectionSize]byte
 
 func (b *section) Free() { sectionPool.Put(b) }
 

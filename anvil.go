@@ -28,11 +28,11 @@ const (
 )
 
 const (
-	// Entries the number of entries in a region file
-	Entries = 32 * 32
-	// SectionSize the size of a section
-	SectionSize     = 1 << sectionShift
-	sectionSizeMask = SectionSize - 1
+	// entries the number of entries in a region file
+	entries = 32 * 32
+	// sectionSize the size of a section
+	sectionSize     = 1 << sectionShift
+	sectionSizeMask = sectionSize - 1
 	sectionShift    = 12
 	entryHeaderSize = 5
 )
@@ -76,7 +76,7 @@ func OpenAnvil(path string, readonly bool) (f *Anvil, err error) {
 // If fileSize is 0, no attempt is made to read any headers.
 func NewAnvil(rg Region, fs *Fs, r reader, readonly bool, fileSize int64) (a *Anvil, err error) {
 	// check if the file size is 0 or a multiple of 4096
-	if fileSize&sectionSizeMask != 0 || (fileSize != 0 && fileSize < SectionSize*2) {
+	if fileSize&sectionSizeMask != 0 || (fileSize != 0 && fileSize < sectionSize*2) {
 		return nil, ErrSize
 	}
 
@@ -96,11 +96,11 @@ func NewAnvil(rg Region, fs *Fs, r reader, readonly bool, fileSize int64) (a *An
 
 	if fileSize == 0 { // fast path for empty files
 		anvil.header.clear()
-		anvil.header.used = bitset.New(Entries)
+		anvil.header.used = bitset.New(entries)
 		return anvil, nil
 	}
 
-	maxSection := uint(fileSize / SectionSize)
+	maxSection := uint(fileSize / sectionSize)
 	anvil.header.used = bitset.New(maxSection)
 
 	// read the file header
@@ -197,7 +197,7 @@ func (a *Anvil) Write(x, z uint8, b []byte) (err error) {
 		}
 	}
 
-	if err = buf.WriteAt(a.write, int64(offset)*SectionSize, true); err != nil {
+	if err = buf.WriteAt(a.write, int64(offset)*sectionSize, true); err != nil {
 		return errors.Wrap("anvil: unable to write entry data", err)
 	}
 	if err = a.write.Sync(); err != nil {
@@ -261,7 +261,7 @@ func (a *Anvil) readUint32Section(dst []uint32, offset int) error {
 
 	if n, err := a.read.ReadAt(tmp[:], int64(offset)); err != nil {
 		return errors.Wrap("anvil: unable to read file header", err)
-	} else if n != SectionSize {
+	} else if n != sectionSize {
 		return errors.Wrap("anvil: Incorrect number of bytes read", io.EOF)
 	}
 
@@ -271,10 +271,10 @@ func (a *Anvil) readUint32Section(dst []uint32, offset int) error {
 
 // readHeader reads the region file header.
 func (a *Anvil) readHeader(maxSection uint32) (err error) {
-	var size, timestamps [Entries]uint32
+	var size, timestamps [entries]uint32
 	if err = a.readUint32Section(size[:], 0); err == nil {
-		if err = a.readUint32Section(timestamps[:], SectionSize); err == nil {
-			for i := 0; i < Entries; i++ {
+		if err = a.readUint32Section(timestamps[:], sectionSize); err == nil {
+			for i := 0; i < entries; i++ {
 				size, offset := size[i]&0xFF, size[i]>>8
 
 				for p := uint32(0); p < size; p++ {
@@ -321,7 +321,7 @@ func (a *Anvil) readEntryHeader(entry *Entry) (length int64, method CompressMeth
 		// reduce the length by 1 since we already read the compression byte
 		length--
 
-		if length/SectionSize > int64(entry.Size) {
+		if length/sectionSize > int64(entry.Size) {
 			return 0, 0, false, errors.CauseStr(ErrCorrupted, "chunk size mismatch")
 		}
 	}
@@ -352,12 +352,12 @@ func (a *Anvil) growFile(size uint) (offset uint, err error) {
 	fileSize := a.size
 
 	// make space for the header if the file does not have one.
-	if fileSize < SectionSize*2 {
-		fileSize = SectionSize * 2
+	if fileSize < sectionSize*2 {
+		fileSize = sectionSize * 2
 	}
 
 	offset = sections(uint(fileSize))
-	a.size = int64(offset+size) * SectionSize // insure the file size is a multiple of 4096 bytes
+	a.size = int64(offset+size) * sectionSize // insure the file size is a multiple of 4096 bytes
 	err = a.write.Truncate(a.size)
 	return
 }
@@ -373,7 +373,7 @@ func (a *Anvil) updateHeader(x, z uint8, offset uint, size uint8) (err error) {
 
 	a.header.Set(x, z, entry)
 
-	if err = a.writeUint32At(uint32(entry.Timestamp), headerOffset+SectionSize); err != nil {
+	if err = a.writeUint32At(uint32(entry.Timestamp), headerOffset+sectionSize); err != nil {
 		return errors.Wrap("anvil: unable to update timestamp", err)
 	}
 	return

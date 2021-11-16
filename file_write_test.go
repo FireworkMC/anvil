@@ -31,7 +31,7 @@ func TestWriteNew(t *testing.T) {
 func TestWriteNewLarge(t *testing.T) {
 	sections := [16][]byte{}
 	for i := range sections {
-		buf := make([]byte, SectionSize*16)
+		buf := make([]byte, sectionSize*16)
 		rand.Read(buf)
 		sections[i] = buf
 	}
