@@ -4,6 +4,7 @@ import (
 	"encoding/binary"
 	"fmt"
 	"io"
+	"path/filepath"
 	"sync"
 	"time"
 
@@ -62,8 +63,10 @@ type Anvil struct {
 func OpenAnvil(path string, readonly bool) (f *Anvil, err error) {
 	var r reader
 	var size int64
-	if r, size, err = openFile(fs, path); err == nil {
-		f, err = NewAnvil(Region{0, 0}, NewFs(fs), r, readonly, size)
+	if path, err = filepath.Abs(path); err == nil {
+		if r, size, err = openFile(fs, path); err == nil {
+			f, err = NewAnvil(Region{0, 0}, NewFs(fs), r, readonly, size)
+		}
 	}
 	return
 }

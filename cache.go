@@ -2,6 +2,8 @@ package anvil
 
 import (
 	"io"
+	"os"
+	"path/filepath"
 	"sync"
 	"sync/atomic"
 
@@ -152,17 +154,23 @@ func (a *Cache) getFile(rg Region) (f *cachedAnvil, ok bool) {
 }
 
 // Open opens the given directory.
-func Open(path string, readonly bool, size int) (c *Cache, err error) {
-	if _, err = fs.Stat(path); err == nil {
-		return OpenFs(NewFs(afero.NewBasePathFs(fs, path)), readonly, size)
+func Open(path string, readonly bool, cacheSize int) (c *Cache, err error) {
+	if path, err = filepath.Abs(path); err == nil {
+		var info os.FileInfo
+		if _, err = fs.Stat(path); err == nil {
+			if !info.IsDir() {
+				return nil, errors.New("anvil: Open: " + path + " is not a directory")
+			}
+			return OpenFs(NewFs(afero.NewBasePathFs(fs, path)), readonly, cacheSize)
+		}
 	}
 	return
 }
 
 // OpenFs opens the given directory.
-func OpenFs(fs *Fs, readonly bool, size int) (c *Cache, err error) {
-	cache := Cache{fs: fs, inUse: map[Region]*cachedAnvil{}, lruSize: size}
-	if cache.lru, err = simplelru.NewLRU(size, nil); err == nil {
+func OpenFs(fs *Fs, readonly bool, cacheSize int) (c *Cache, err error) {
+	cache := Cache{fs: fs, inUse: map[Region]*cachedAnvil{}, lruSize: cacheSize}
+	if cache.lru, err = simplelru.NewLRU(cacheSize, nil); err == nil {
 		return &cache, nil
 	}
 	return
