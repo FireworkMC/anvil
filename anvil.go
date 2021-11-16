@@ -47,26 +47,26 @@ func (c *Chunk) Region() Region { return Region{c.X >> 5, c.Z >> 5} }
 // Chunk gets the chunk position for the given postion
 func (r *Region) Chunk(x, z uint8) Chunk { return Chunk{r.X<<5 | int32(x), r.Z<<5 | int32(z)} }
 
-// Anvil handles an entire directory containing anvil files.
-type Anvil struct{ fs Fs }
+// Dir handles an entire directory containing anvil files.
+type Dir struct{ fs Fs }
 
 // File gets the anvil file for the given coords
-func (a *Anvil) File(rg Region) (f *File, err error) {
+func (a *Dir) File(rg Region) (f *Anvil, err error) {
 	r, size, readonly, err := a.fs.Open(rg)
 	if err != nil {
 		return
 	}
-	if f, err = ReadFile(rg, r, readonly, size); err == nil {
+	if f, err = ReadAnvil(rg, r, readonly, size); err == nil {
 		f.anvil = a
 	}
 	return
 }
 
 // Open opens the given directory.
-func Open(path string) (*Anvil, error) {
+func Open(path string) (*Dir, error) {
 	if _, err := fs.Stat(path); err != nil {
 		return nil, err
 	}
 	dir := &dir{afero.NewBasePathFs(fs, path)}
-	return &Anvil{fs: dir}, nil
+	return &Dir{fs: dir}, nil
 }

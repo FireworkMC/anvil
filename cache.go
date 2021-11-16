@@ -9,16 +9,16 @@ import (
 	"github.com/yehan2002/errors"
 )
 
-type file = File
+type anvil = Anvil
 
-// CachedFile a cached file
-type CachedFile struct {
+// CachedAnvil a cached anvil file
+type CachedAnvil struct {
 	*cachedFile
 	closer sync.Once
 }
 
 type cachedFile struct {
-	*file
+	*anvil
 	cache *Cache
 
 	// useCount the number of users for this file
@@ -28,14 +28,14 @@ type cachedFile struct {
 
 // Close closes the file.
 // Calling any methods after calling this will cause a panic.
-func (c *CachedFile) Close() (err error) {
+func (c *CachedAnvil) Close() (err error) {
 	c.closer.Do(func() { err = c.cache.free(c.cachedFile); c.cachedFile = nil })
 	return
 }
 
-// Cache a cached version of anvil.
+// Cache a cached version of `Dir`.
 type Cache struct {
-	anvil *Anvil
+	anvil *Dir
 	inUse map[Region]*cachedFile
 
 	lru     *simplelru.LRU
@@ -55,16 +55,16 @@ func (a *Cache) get(rg Region) (f *cachedFile, err error) {
 		defer a.mux.Unlock()
 		// check if the file was opened while we were waiting for the mux
 		if f, ok = a.getFile(rg); !ok {
-			var file *File
+			var file *Anvil
 			if v, ok := a.lru.Get(rg); ok { // check if the file is in the lru cache
 				a.lru.Remove(rg)
-				file = v.(*File)
+				file = v.(*Anvil)
 			} else { // read file from the disk
 				file, err = a.anvil.File(rg)
 			}
 
 			if err == nil {
-				f = &cachedFile{file: file, cache: a, useCount: 1}
+				f = &cachedFile{anvil: file, cache: a, useCount: 1}
 				a.inUse[rg] = f
 			}
 		}
@@ -87,13 +87,13 @@ func (a *Cache) free(f *cachedFile) (err error) {
 			// We do this to insure the file gets closed properly and to free all associated resources
 			if a.lru.Len() == a.lruSize {
 				if _, old, ok := a.lru.RemoveOldest(); ok {
-					if err = old.(*File).Close(); err != nil {
+					if err = old.(*Anvil).Close(); err != nil {
 						err = errors.Wrap("anvil.Cache: error occurred while evicting file", err)
 					}
 				}
 			}
 
-			evicted := a.lru.Add(f.pos, f.file)
+			evicted := a.lru.Add(f.pos, f.anvil)
 			if evicted {
 				// This should never happen since we manually evicted the oldest element
 				panic("anvil.Cache: File was incorrectly evicted")

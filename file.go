@@ -11,14 +11,14 @@ import (
 	"github.com/yehan2002/fastbytes/v2"
 )
 
-// File is a single anvil region file.
-type File struct {
+// Anvil is a single anvil region file.
+type Anvil struct {
 	mux    sync.RWMutex
 	header *Header
 	used   *bitset.BitSet
 
 	pos   Region
-	anvil *Anvil
+	anvil *Dir
 
 	size  int64
 	write Writer
@@ -30,16 +30,16 @@ type File struct {
 	cm CompressMethod
 }
 
-// OpenFile opens the given anvil file.
+// OpenAnvil opens the given anvil file.
 // If readonly is set any attempts to modify the file will return an error.
 // If any data is stored in external files, any attempt to read it will return ErrExternal.
 // If an attempt is made to write a data that is over 1MB after compression, ErrExternal will be returned.
 // To allow reading and writing to external files use `Open` instead.
-func OpenFile(path string, readonly bool) (f *File, err error) {
+func OpenAnvil(path string, readonly bool) (f *Anvil, err error) {
 	var r Reader
 	var size int64
 	if r, size, err = openFile(fs, path); err == nil {
-		f, err = ReadFile(Region{0, 0}, r, readonly, size)
+		f, err = ReadAnvil(Region{0, 0}, r, readonly, size)
 	}
 	return
 }
@@ -61,10 +61,10 @@ func openFile(fs afero.Fs, path string) (r Reader, size int64, err error) {
 	return f, fileSize, nil
 }
 
-// ReadFile reads an anvil file from the given ReadAtCloser.
+// ReadAnvil reads an anvil file from the given ReadAtCloser.
 // This has the same limitations as `OpenFile`.
 // If fileSize is 0, no attempt is made to read any headers.
-func ReadFile(rg Region, r Reader, readonly bool, fileSize int64) (f *File, err error) {
+func ReadAnvil(rg Region, r Reader, readonly bool, fileSize int64) (f *Anvil, err error) {
 
 	// check if the file size is 0 or a multiple of 4096
 	if fileSize&sectionSizeMask != 0 || (fileSize != 0 && fileSize < SectionSize*2) {
@@ -72,7 +72,7 @@ func ReadFile(rg Region, r Reader, readonly bool, fileSize int64) (f *File, err 
 	}
 
 	header := headerPool.Get().(*Header)
-	f = &File{header: header, pos: rg, read: r, size: fileSize}
+	f = &Anvil{header: header, pos: rg, read: r, size: fileSize}
 
 	if !readonly {
 		var canWrite bool
@@ -119,7 +119,7 @@ func ReadFile(rg Region, r Reader, readonly bool, fileSize int64) (f *File, err 
 }
 
 // readHeader reads the region file header.
-func (f *File) readHeader(size, timestamps []uint32) (err error) {
+func (f *Anvil) readHeader(size, timestamps []uint32) (err error) {
 	if err = f.readUint32Section(size[:], 0); err == nil {
 		err = f.readUint32Section(timestamps[:], SectionSize)
 	}
@@ -127,7 +127,7 @@ func (f *File) readHeader(size, timestamps []uint32) (err error) {
 }
 
 // readUint32Section reads a 4096 byte section at the given offset into the given uint32 slice.
-func (f *File) readUint32Section(dst []uint32, offset int) error {
+func (f *Anvil) readUint32Section(dst []uint32, offset int) error {
 	tmp := sectionPool.Get().(*section)
 	defer tmp.Free()
 

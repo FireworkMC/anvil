@@ -14,7 +14,7 @@ var zeroHeader [entryHeaderSize]byte
 
 // Read reads the entry at the given position to `r`.
 // `r` must not retain the reader passed to it.
-func (f *File) Read(x, z uint8, r io.ReaderFrom) (n int64, err error) {
+func (f *Anvil) Read(x, z uint8, r io.ReaderFrom) (n int64, err error) {
 	if x > 31 || z > 31 {
 		return 0, fmt.Errorf("anvil: invalid chunk position")
 	}
@@ -55,7 +55,7 @@ func (f *File) Read(x, z uint8, r io.ReaderFrom) (n int64, err error) {
 
 // readerForEntry returns a reader that reads the given entry.
 // The reader is only valid until the next call to `Write`
-func (f *File) readerForEntry(x, z uint8, offset, length int64, external bool) (src io.ReadCloser, err error) {
+func (f *Anvil) readerForEntry(x, z uint8, offset, length int64, external bool) (src io.ReadCloser, err error) {
 	if !external {
 		return io.NopCloser(io.NewSectionReader(f.read, offset+entryHeaderSize, length)), nil
 	} else if f.anvil != nil {
@@ -65,7 +65,7 @@ func (f *File) readerForEntry(x, z uint8, offset, length int64, external bool) (
 }
 
 // readEntryHeader reads the header for the given entry.
-func (f *File) readEntryHeader(entry *Entry) (length int64, method CompressMethod, external bool, err error) {
+func (f *Anvil) readEntryHeader(entry *Entry) (length int64, method CompressMethod, external bool, err error) {
 	header := [entryHeaderSize]byte{}
 	if _, err = f.read.ReadAt(header[:], entry.OffsetBytes()); err == nil {
 		// the first 4 bytes in the header holds the length of the data as a big endian uint32

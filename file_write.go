@@ -8,7 +8,7 @@ import (
 	"github.com/yehan2002/errors"
 )
 
-func (f *File) Write(x, z uint8, b []byte) (err error) {
+func (f *Anvil) Write(x, z uint8, b []byte) (err error) {
 	if len(b) == 0 {
 		return f.Remove(x, z)
 	}
@@ -54,7 +54,7 @@ func (f *File) Write(x, z uint8, b []byte) (err error) {
 }
 
 // Remove removes the given entry from the file.
-func (f *File) Remove(x, z uint8) (err error) {
+func (f *Anvil) Remove(x, z uint8) (err error) {
 	f.mux.Lock()
 	defer f.mux.Unlock()
 
@@ -71,7 +71,7 @@ func (f *File) Remove(x, z uint8) (err error) {
 }
 
 // CompressionMethod sets the compression method to be used by the writer
-func (f *File) CompressionMethod(m CompressMethod) (err error) {
+func (f *Anvil) CompressionMethod(m CompressMethod) (err error) {
 	f.mux.Lock()
 	defer f.mux.Unlock()
 	var c compressor
@@ -84,7 +84,7 @@ func (f *File) CompressionMethod(m CompressMethod) (err error) {
 // checkWrite checks if the write is valid.
 // This checks if x,z are within bounds
 // and if the file was opened for writing and has not been closed.
-func (f *File) checkWrite(x, z uint8) error {
+func (f *Anvil) checkWrite(x, z uint8) error {
 	if x > 31 || z > 31 {
 		return fmt.Errorf("anvil: invalid entry position")
 	}
@@ -100,7 +100,7 @@ func (f *File) checkWrite(x, z uint8) error {
 	return nil
 }
 
-func (f *File) initCompression() (err error) {
+func (f *Anvil) initCompression() (err error) {
 	if f.cm == 0 {
 		f.cm = DefaultCompression
 		f.c, err = f.cm.compressor()
@@ -110,7 +110,7 @@ func (f *File) initCompression() (err error) {
 
 // Close closes the file.
 // This blocks until all reads have completed
-func (f *File) Close() (err error) {
+func (f *Anvil) Close() (err error) {
 	f.mux.Lock()
 	defer f.mux.Unlock()
 	if !f.closed {
@@ -129,7 +129,7 @@ func (f *File) Close() (err error) {
 }
 
 // growFile grows the file to fit `size` more sections.
-func (f *File) growFile(size uint) (offset uint, err error) {
+func (f *Anvil) growFile(size uint) (offset uint, err error) {
 	fileSize := f.size
 
 	// make space for the header if the file does not have one.
@@ -143,7 +143,7 @@ func (f *File) growFile(size uint) (offset uint, err error) {
 	return
 }
 
-func (f *File) updateHeader(x, z uint8, offset uint, size uint8) (err error) {
+func (f *Anvil) updateHeader(x, z uint8, offset uint, size uint8) (err error) {
 	headerOffset := int64(x)<<2 | int64(z)<<7
 
 	if err = f.writeUint32At(uint32(offset)<<8|uint32(size), headerOffset); err != nil {
@@ -164,7 +164,7 @@ func (f *File) updateHeader(x, z uint8, offset uint, size uint8) (err error) {
 
 // writeUint32 writes the given uint32 at the given position
 // and syncs the changes to disk.
-func (f *File) writeUint32At(v uint32, offset int64) (err error) {
+func (f *Anvil) writeUint32At(v uint32, offset int64) (err error) {
 	var tmp [4]byte
 	binary.BigEndian.PutUint32(tmp[:], v)
 	if _, err = f.write.WriteAt(tmp[:], offset); err == nil {
@@ -175,7 +175,7 @@ func (f *File) writeUint32At(v uint32, offset int64) (err error) {
 }
 
 // setUsed marks the space used by the given entry in the `used` bitset as used.
-func (f *File) setUsed(c *Entry) {
+func (f *Anvil) setUsed(c *Entry) {
 	end := uint(c.Offset) + uint(c.Size)
 	for i := uint(c.Offset); i < end; i++ {
 		if f.used.Test(i) {
@@ -187,7 +187,7 @@ func (f *File) setUsed(c *Entry) {
 }
 
 // clearUsed marks the space used by the given entry in the `used` bitset as unused.
-func (f *File) clearUsed(c *Entry) {
+func (f *Anvil) clearUsed(c *Entry) {
 	if c.Offset == 0 || c.Size == 0 {
 		return
 	}
@@ -202,7 +202,7 @@ func (f *File) clearUsed(c *Entry) {
 }
 
 // compress compresses the given byte slice and writes it to a Buffer.
-func (f *File) compress(b []byte) (buf *Buffer, err error) {
+func (f *Anvil) compress(b []byte) (buf *Buffer, err error) {
 	if err = f.initCompression(); err != nil {
 		return nil, err
 	}
@@ -221,7 +221,7 @@ func (f *File) compress(b []byte) (buf *Buffer, err error) {
 }
 
 // findSpace finds the next free space large enough to store `size` sections
-func (f *File) findSpace(size uint) (offset uint, found bool) {
+func (f *Anvil) findSpace(size uint) (offset uint, found bool) {
 	// ignore the first two section since they are used for the header
 	offset = 2
 
