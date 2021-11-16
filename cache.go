@@ -76,7 +76,7 @@ func (a *Cache) get(rg Region) (f *cachedFile, err error) {
 func (a *Cache) free(f *cachedFile) (err error) {
 	a.mux.RLock()
 	newCount := atomic.AddInt32(&f.useCount, -1)
-	a.mux.Unlock()
+	a.mux.RUnlock()
 
 	if newCount == 0 {
 		a.mux.Lock()

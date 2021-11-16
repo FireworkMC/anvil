@@ -32,30 +32,31 @@ type Fs interface {
 
 var _ Writer = afero.File(nil)
 var _ Writer = &os.File{}
+var _ Fs = &dir{}
 
 type dir struct{ fs afero.Fs }
 
 // Open opens the given region file
-func (d *dir) Open(x, z int) (r Reader, size int64, readonly bool, err error) {
-	if r, size, err = openFile(d.fs, fmt.Sprintf("r.%d.%d.mca", x>>5, z>>5)); err == nil {
+func (d *dir) Open(rg Region) (r Reader, size int64, readonly bool, err error) {
+	if r, size, err = openFile(d.fs, fmt.Sprintf("r.%d.%d.mca", rg.X>>5, rg.Z>>5)); err == nil {
 		return r, size, false, nil
 	}
 	return nil, 0, false, err
 }
 
 // ReadExternal reads an external .mcc file
-func (d *dir) ReadExternal(x, z int) (r io.ReadCloser, err error) {
+func (d *dir) ReadExternal(c Chunk) (r io.ReadCloser, err error) {
 	var f afero.File
-	if f, err = fs.Open(fmt.Sprintf("r.%d.%d.mcc", x, z)); err != nil {
+	if f, err = fs.Open(fmt.Sprintf("r.%d.%d.mcc", c.X, c.Z)); err != nil {
 		return nil, errors.Wrap("anvil: unable to open external file", err)
 	}
 	return f, nil
 }
 
 // WriteExternal writes to an external .mcc file
-func (d *dir) WriteExternal(x, z int, b *Buffer) (err error) {
+func (d *dir) WriteExternal(c Chunk, b *Buffer) (err error) {
 	var f afero.File
-	if f, err = fs.Create(fmt.Sprintf("r.%d.%d.mcc", x, z)); err != nil {
+	if f, err = fs.Create(fmt.Sprintf("r.%d.%d.mcc", c.X, c.Z)); err != nil {
 		return errors.Wrap("anvil: unable to create external file", err)
 	}
 	return errors.Wrap("anvil: unable to write external file", b.WriteTo(f, false))
