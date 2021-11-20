@@ -35,6 +35,8 @@ const (
 	sectionSizeMask = sectionSize - 1
 	sectionShift    = 12
 	entryHeaderSize = 5
+	// maxFileSections the maximum number of sections a file can contain
+	maxFileSections = 255 * entries
 )
 
 // Anvil is a single anvil region file.
@@ -104,8 +106,13 @@ func NewAnvil(rg Region, fs *Fs, r reader, readonly bool, fileSize int64) (a *An
 	anvil.header.used = bitset.New(maxSection)
 
 	// read the file header
-	if err = anvil.readHeader(uint32(maxSection)); err == nil {
-		return anvil, nil
+	var size, timestamps [entries]uint32
+	if err = anvil.readUint32Section(size[:], 0); err == nil {
+		if err = anvil.readUint32Section(timestamps[:], sectionSize); err == nil {
+			if err = anvil.header.Read(&size, &timestamps, uint32(maxSection)); err == nil {
+				return anvil, nil
+			}
+		}
 	}
 	return
 }
@@ -269,33 +276,6 @@ func (a *Anvil) readUint32Section(dst []uint32, offset int) error {
 	return nil
 }
 
-// readHeader reads the region file header.
-func (a *Anvil) readHeader(maxSection uint32) (err error) {
-	var size, timestamps [entries]uint32
-	if err = a.readUint32Section(size[:], 0); err == nil {
-		if err = a.readUint32Section(timestamps[:], sectionSize); err == nil {
-			for i := 0; i < entries; i++ {
-				size, offset := size[i]&0xFF, size[i]>>8
-
-				for p := uint32(0); p < size; p++ {
-					pos := offset + p
-					if pos > maxSection {
-						return errors.CauseStr(ErrCorrupted, "invalid chunk data location")
-					}
-					if a.header.used.Test(uint(pos)) {
-						return errors.CauseStr(ErrCorrupted, "invalid chunk size/location")
-					}
-
-					a.header.used.Set(uint(pos))
-				}
-
-				a.header.entries[i] = Entry{Timestamp: int32(timestamps[i]), Size: uint8(size), Offset: offset}
-			}
-		}
-	}
-	return err
-}
-
 // readerForEntry returns a reader that reads the given entry.
 // The reader is only valid until the next call to `Write`
 func (a *Anvil) readerForEntry(x, z uint8, offset, length int64, external bool) (src io.ReadCloser, err error) {
@@ -391,9 +371,9 @@ func (a *Anvil) writeUint32At(v uint32, offset int64) (err error) {
 	return
 }
 
-// compress compresses the given byte slice and writes it to a Buffer.
+// compress compresses the given byte slice and writes it to a buffer.
 func (a *Anvil) compress(b []byte) (buf *buffer, err error) {
-	if a.cm == 0 {
+	if a.cm == 0 || a.c == nil {
 		a.cm = DefaultCompression
 		if a.c, err = a.cm.compressor(); err != nil {
 			return nil, err

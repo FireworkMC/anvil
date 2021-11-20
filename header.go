@@ -4,6 +4,7 @@ import (
 	"sync"
 
 	"github.com/bits-and-blooms/bitset"
+	"github.com/yehan2002/errors"
 )
 
 var headerPool = sync.Pool{New: func() interface{} { return &[entries]Entry{} }}
@@ -51,11 +52,15 @@ func (h *Header) Get(x, z uint8) *Entry {
 	return &h.entries[uint16(x&0x1f)|(uint16(z&0x1f)<<5)]
 }
 
-func (h *Header) clear() { *h.entries = [entries]Entry{} }
+func (h *Header) clear() { *h.entries = [entries]Entry{}; h.used.ClearAll() }
 
 // Set updates the entry at x,z and the given marks the
 // space used by the given entry in the `used` bitset as used.
 func (h *Header) Set(x, z uint8, c Entry) {
+	if c.Offset < 2 || c.Offset+uint32(c.Size) > maxFileSections {
+		panic("invalid offset")
+	}
+
 	old := h.Get(x, z)
 	if old.Generated() {
 		h.freeSpace(old)
@@ -75,14 +80,14 @@ func (h *Header) Remove(x, z uint8) {
 // markSpace marks the space used by the given entry as used.
 // This panics if the entry overflows into used an area.
 func (h *Header) markSpace(c Entry) {
-	end := uint(c.Offset) + uint(c.Size)
-	for i := uint(c.Offset); i < end; i++ {
+	for i := uint(0); i < uint(c.Size); i++ {
+		pos := uint(c.Offset) + i
 
-		if h.used.Test(i) {
+		if h.used.Test(pos) {
 			panic("anvil: Header: entry overflows into used space")
 		}
 
-		h.used.Set(i)
+		h.used.Set(pos)
 	}
 }
 
@@ -92,12 +97,13 @@ func (h *Header) freeSpace(c *Entry) {
 	if c.Offset == 0 || c.Size == 0 {
 		return
 	}
-	end := uint(c.Offset) + uint(c.Size)
-	for i := uint(c.Offset); i < end; i++ {
-		if !h.used.Test(i) {
+
+	for i := uint(0); i < uint(c.Size); i++ {
+		pos := uint(c.Offset) + i
+		if !h.used.Test(pos) {
 			panic("anvil: Header: inconsistent usage of space")
 		}
-		h.used.Clear(i)
+		h.used.Clear(pos)
 	}
 }
 
@@ -129,5 +135,54 @@ func (h *Header) FindSpace(size uint) (offset uint, found bool) {
 // Free frees the header and puts it into the pool.
 // Callers must not use the header after calling this.
 func (h *Header) Free() { headerPool.Put(h.entries) }
+
+// Read reads the header from the given arrays.
+// `size` should contains the size and position of entries, with the least significant byte
+// being the number of sections used by the entry and the rest containing the
+// offset where the entry starts.
+// `timestamps` should be an array of timestamps when the entries were last modified
+// as the number of seconds since January 1, 1970 UTC.
+// This function expects `size`, `timestamps` to be in the hosts byte order.
+// `fileSections` is the max amount of sections that can be used by the entries.
+// If `fileSections` is 0, `maxFileSections` is used instead.
+func (h *Header) Read(size, timestamps *[entries]uint32, fileSections uint32) (err error) {
+	if fileSections == 0 {
+		fileSections = maxFileSections
+	}
+
+	for i := 0; i < entries; i++ {
+
+		size, offset := size[i]&0xFF, size[i]>>8
+
+		for p := uint32(0); p < size; p++ {
+			pos := offset + p
+
+			// check if the postion is within the file
+			if pos > fileSections {
+				return errors.CauseStr(ErrCorrupted, "entry is outside the file")
+			}
+
+			// check if the position overlaps with another entry
+			if h.used.Test(uint(pos)) {
+				return errors.CauseStr(ErrCorrupted, "entry overlaps with another entry")
+			}
+
+			h.used.Set(uint(pos))
+		}
+
+		h.entries[i] = Entry{Timestamp: int32(timestamps[i]), Size: uint8(size), Offset: offset}
+	}
+	return
+}
+
+// Write writes the header to the given arrays.
+// See comment on `Header.Read`.
+func (h *Header) Write(size, timestamps *[entries]uint32) {
+	for i := 0; i < entries; i++ {
+		entry := h.entries[i]
+		size[i] = entry.Offset<<8 | uint32(entry.Size)
+		timestamps[i] = uint32(entry.Timestamp)
+	}
+}
 
 func newHeader() *Header { return &Header{entries: headerPool.Get().(*[entries]Entry)} }
