@@ -58,6 +58,10 @@ func (h *Header) clear() { *h.entries = [entries]Entry{}; h.used.ClearAll() }
 // space used by the given entry in the `used` bitset as used.
 func (h *Header) Set(x, z uint8, c Entry) {
 	if c.Offset < 2 || c.Offset+uint32(c.Size) > maxFileSections {
+		if c.Offset == 0 && c.Size == 0 {
+			h.Remove(x, z)
+			return
+		}
 		panic("invalid offset")
 	}
 

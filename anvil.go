@@ -187,11 +187,20 @@ func (a *Anvil) Write(x, z uint8, b []byte) (err error) {
 	size := sections(uint(buf.Len()))
 
 	if size > 255 {
-		if a.fs != nil {
-			cx, cz := a.pos.Chunk(x, z)
-			return a.fs.writeExternal(cx, cz, buf)
+		if a.fs == nil {
+			return ErrExternal
 		}
-		return ErrExternal
+
+		cx, cz := a.pos.Chunk(x, z)
+		if err = a.fs.writeExternal(cx, cz, buf); err != nil {
+			return
+		}
+
+		method := buf.compress
+		buf.Free()
+		buf.Write([]byte{0})
+		buf.CompressMethod(method | externalMask)
+		size = 1
 	}
 
 	// try to find space to store the data
