@@ -28,7 +28,7 @@ type writer interface {
 var _ writer = afero.File(nil)
 
 // NewFs creates an Fs from the given afero.Fs.
-func NewFs(f afero.Fs) *Fs { return &Fs{fs: f, RegionFmt: "r.%d.%d.mca", ChunkFmt: "r.%d.%d.mcc"} }
+func NewFs(f afero.Fs) *Fs { return &Fs{fs: f, RegionFmt: "r.%d.%d.mca", ChunkFmt: "c.%d.%d.mcc"} }
 
 // Fs handles opening anvil files.
 type Fs struct {
@@ -47,7 +47,7 @@ func (d *Fs) open(anvilX, anvilZ int32, readonly bool) (r reader, size int64, er
 // readExternal reads an external .mcc file
 func (d *Fs) readExternal(entryX, entryZ int32) (r io.ReadCloser, err error) {
 	var f afero.File
-	if f, err = fs.Open(fmt.Sprintf(d.ChunkFmt, entryX, entryZ)); err != nil {
+	if f, err = d.fs.Open(fmt.Sprintf(d.ChunkFmt, entryX, entryZ)); err != nil {
 		return nil, errors.Wrap("anvil: unable to open external file", err)
 	}
 	return f, nil
@@ -56,7 +56,7 @@ func (d *Fs) readExternal(entryX, entryZ int32) (r io.ReadCloser, err error) {
 // writeExternal writes to an external .mcc file
 func (d *Fs) writeExternal(entryX, entryZ int32, b *buffer) (err error) {
 	var f afero.File
-	if f, err = fs.Create(fmt.Sprintf(d.ChunkFmt, entryX, entryZ)); err != nil {
+	if f, err = d.fs.Create(fmt.Sprintf(d.ChunkFmt, entryX, entryZ)); err != nil {
 		return errors.Wrap("anvil: unable to create external file", err)
 	}
 	return errors.Wrap("anvil: unable to write external file", b.WriteTo(f, false))
