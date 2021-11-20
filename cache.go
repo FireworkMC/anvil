@@ -98,7 +98,7 @@ func (a *Cache) get(rgX, rgZ int32) (f *cachedAnvil, err error) {
 			} else { // read file from the disk
 				var r reader
 				var size int64
-				if r, size, err = a.fs.open(rg.x, rg.z); err == nil {
+				if r, size, err = a.fs.open(rg.x, rg.z, a.readonly); err == nil {
 					file, err = NewAnvil(rg, a.fs, r, a.readonly, size)
 				}
 			}
@@ -169,7 +169,7 @@ func Open(path string, readonly bool, cacheSize int) (c *Cache, err error) {
 
 // OpenFs opens the given directory.
 func OpenFs(fs *Fs, readonly bool, cacheSize int) (c *Cache, err error) {
-	cache := Cache{fs: fs, inUse: map[Region]*cachedAnvil{}, lruSize: cacheSize}
+	cache := Cache{fs: fs, inUse: map[Region]*cachedAnvil{}, lruSize: cacheSize, readonly: readonly}
 	if cache.lru, err = simplelru.NewLRU(cacheSize, nil); err == nil {
 		return &cache, nil
 	}

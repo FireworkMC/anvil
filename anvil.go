@@ -66,7 +66,7 @@ func OpenAnvil(path string, readonly bool) (f *Anvil, err error) {
 	var r reader
 	var size int64
 	if path, err = filepath.Abs(path); err == nil {
-		if r, size, err = openFile(fs, path); err == nil {
+		if r, size, err = openFile(fs, path, readonly); err == nil {
 			f, err = NewAnvil(Region{0, 0}, NewFs(fs), r, readonly, size)
 		}
 	}

@@ -37,8 +37,8 @@ type Fs struct {
 }
 
 // open opens the given region file
-func (d *Fs) open(anvilX, anvilZ int32) (r reader, size int64, err error) {
-	if r, size, err = openFile(d.fs, fmt.Sprintf(d.RegionFmt, anvilX, anvilZ)); err == nil {
+func (d *Fs) open(anvilX, anvilZ int32, readonly bool) (r reader, size int64, err error) {
+	if r, size, err = openFile(d.fs, fmt.Sprintf(d.RegionFmt, anvilX, anvilZ), readonly); err == nil {
 		return r, size, nil
 	}
 	return nil, 0, err
@@ -62,7 +62,7 @@ func (d *Fs) writeExternal(entryX, entryZ int32, b *buffer) (err error) {
 	return errors.Wrap("anvil: unable to write external file", b.WriteTo(f, false))
 }
 
-func openFile(fs afero.Fs, path string) (r reader, size int64, err error) {
+func openFile(fs afero.Fs, path string, readonly bool) (r reader, size int64, err error) {
 	var fileSize int64
 	if info, err := fs.Stat(path); err != nil {
 		if !os.IsNotExist(err) {
@@ -72,8 +72,16 @@ func openFile(fs afero.Fs, path string) (r reader, size int64, err error) {
 		fileSize = info.Size()
 	}
 
+	var fileFlags = os.O_RDWR | os.O_CREATE
+	if readonly {
+		if fileSize == 0 {
+			return
+		}
+		fileFlags = os.O_RDONLY
+	}
+
 	var f afero.File
-	if f, err = fs.OpenFile(path, os.O_RDWR|os.O_CREATE, 0666); err != nil {
+	if f, err = fs.OpenFile(path, fileFlags, 0666); err != nil {
 		return nil, 0, errors.Wrap("anvil: unable to open file", err)
 	}
 	return f, fileSize, nil

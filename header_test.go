@@ -53,3 +53,24 @@ func (*headerTest) TestSetRemove(is is.Is) {
 		}
 	}
 }
+
+func (*headerTest) TestGet(is is.Is) {
+	var actual [entries]Entry
+
+	header := newHeader()
+	header.clear()
+	defer header.Free()
+
+	is.Equal(header.entries[:], actual[:], "incorrect header clear")
+
+	for x := 0; x < 32; x++ {
+		for z := 0; z < 32; z++ {
+			v := uint32(x)<<16 | uint32(z)
+			header.Get(uint8(x), uint8(z)).Offset = v
+			actual[z*32+x] = Entry{Offset: v}
+		}
+	}
+	is.Equal(header.entries[:], actual[:], "incorrect header modification")
+	is.Panic(func() { header.Get(32, 0) }, "header did not panic for invalid coords")
+	is.Panic(func() { header.Get(0, 32) }, "header did not panic for invalid coords")
+}
