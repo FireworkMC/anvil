@@ -1,10 +1,13 @@
 package anvil
 
 import (
+	"fmt"
+	"io"
 	"sync"
 
 	"github.com/bits-and-blooms/bitset"
 	"github.com/yehan2002/errors"
+	"github.com/yehan2002/fastbytes/v2"
 )
 
 var headerPool = sync.Pool{New: func() interface{} { return &[entries]Entry{} }}
@@ -47,7 +50,7 @@ type Header struct {
 // If the given x,z values are not between 0 and 31 (inclusive) this panics.
 func (h *Header) Get(x, z uint8) *Entry {
 	if x > 31 || z > 31 {
-		panic("invalid position")
+		panic(fmt.Errorf("anvil/Header: Get: invalid position (%d,%d)", x, z))
 	}
 	return &h.entries[uint16(x&0x1f)|(uint16(z&0x1f)<<5)]
 }
@@ -189,4 +192,44 @@ func (h *Header) Write(size, timestamps *[entries]uint32) {
 	}
 }
 
+// ReadHeader reads a header from the given reader.
+// The given reader must read at least 2*4096 bytes.
+// If `maxSections` != 0, this returns an error if the header references more than
+// `maxSections` sections.
+func ReadHeader(r io.ReaderAt, maxSection uint) (h *Header, err error) {
+	h = newHeader()
+
+	if maxSection == 0 {
+		h.used = bitset.New(entries)
+	} else {
+		h.used = bitset.New(maxSection)
+	}
+
+	// read the file header
+	var size, timestamps [entries]uint32
+	if err = h.readUint32Section(r, size[:], 0); err == nil {
+		if err = h.readUint32Section(r, timestamps[:], sectionSize); err == nil {
+			if err = h.Read(&size, &timestamps, uint32(maxSection)); err == nil {
+				return h, nil
+			}
+		}
+	}
+	return nil, err
+}
+
 func newHeader() *Header { return &Header{entries: headerPool.Get().(*[entries]Entry)} }
+
+// readUint32Section reads a 4096 byte section at the given offset into the given uint32 slice.
+func (h *Header) readUint32Section(read io.ReaderAt, dst []uint32, offset int) error {
+	tmp := sectionPool.Get().(*section)
+	defer tmp.Free()
+
+	if n, err := read.ReadAt(tmp[:], int64(offset)); err != nil {
+		return errors.Wrap("anvil: unable to read file header", err)
+	} else if n != sectionSize {
+		return errors.Wrap("anvil: Incorrect number of bytes read", io.EOF)
+	}
+
+	fastbytes.BigEndian.ToU32(tmp[:], dst)
+	return nil
+}

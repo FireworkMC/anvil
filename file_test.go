@@ -26,7 +26,18 @@ func TestFile(t *testing.T) {
 }
 
 func (f *fileTest) TestSimple(is is.Is) {
-	test := f.testFile(is, "test_simple.tzst")
+	tfs := readTestData(is, "test_simple.tzst")
+	test := f.testFile(is, tfs)
+	for x := 0; x < 32; x++ {
+		for z := 0; z < 32; z++ {
+			test(x, z)
+		}
+	}
+}
+
+func (f *fileTest) TestExternal(is is.Is) {
+	tfs := readTestData(is, "test_external.tzst")
+	test := f.testFile(is, tfs)
 	for x := 0; x < 32; x++ {
 		for z := 0; z < 32; z++ {
 			test(x, z)
@@ -35,7 +46,8 @@ func (f *fileTest) TestSimple(is is.Is) {
 }
 
 func (f *fileTest) TestMultpleFiles(is is.Is) {
-	test := f.testFile(is, "test_multiple_files.tzst")
+	tfs := readTestData(is, "test_multiple_files.tzst")
+	test := f.testFile(is, tfs)
 	for x := -31; x < 64; x++ {
 		for z := -31; z < 64; z++ {
 			test(x, z)
@@ -43,8 +55,7 @@ func (f *fileTest) TestMultpleFiles(is is.Is) {
 	}
 }
 
-func (f *fileTest) testFile(is is.Is, name string) func(x, z int) {
-	tfs := readTestData(is, name)
+func (f *fileTest) testFile(is is.Is, tfs afero.Fs) func(x, z int) {
 	cache, err := OpenFs(NewFs(tfs), true, 5)
 	is(err == nil, "unexpected error while opening")
 
@@ -53,12 +64,19 @@ func (f *fileTest) testFile(is is.Is, name string) func(x, z int) {
 		_, cacheErr := cache.Read(int32(x), int32(z), &anvilBuffer)
 		buf, fileErr := afero.ReadFile(tfs, fmt.Sprintf("chunks/%d.%d.nbt", x, z))
 
-		if errors.Is(cacheErr, os.ErrNotExist) && errors.Is(cacheErr, ErrNotGenerated) {
+		f, err := cache.get(int32(x>>5), int32(z>>5))
+		is(err == nil, "unexpected error")
+		defer cache.free(f)
+
+		if errors.Is(fileErr, os.ErrNotExist) && errors.Is(cacheErr, ErrNotGenerated) {
 			return
 		}
 
-		is(cacheErr == nil, "unexpected error while reading test data: c: %s, f: %s ", cacheErr, fileErr)
-		is(fileErr == nil, "unexpected error while reading test data: f: %s, c: %s,", fileErr, cacheErr)
+		if cacheErr != nil || fileErr != nil {
+			is.Log("header at (%d,%d): %#v", x, z, f.header.Get(uint8(x&31), uint8(z&31)))
+			is(cacheErr == nil, "unexpected error while reading test data: x: %d z:%d c: %s, f: %s ", x, z, cacheErr, fileErr)
+			is(fileErr == nil, "unexpected error while reading test data: x: %d z:%d f: %s, c: %s,", x, z, fileErr, cacheErr)
+		}
 
 		is(bytes.Equal(buf, anvilBuffer.Bytes()), "incorrect data read at %x, %x", x, z)
 	}

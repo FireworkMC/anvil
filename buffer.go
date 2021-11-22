@@ -67,6 +67,10 @@ func (b *buffer) WriteAt(w io.WriterAt, off int64, header bool) error {
 		startOffset = 0
 	}
 
+	if off > 0 && off < sectionSize*2 {
+		panic("invalid offset")
+	}
+
 	for i := 0; i < len(b.buf); i++ {
 		buf := b.buf[i][startOffset:]
 
@@ -88,7 +92,7 @@ func (b *buffer) WriteAt(w io.WriterAt, off int64, header bool) error {
 
 // WriteTo same as `WriteAt` but writes to the start of the given writer
 func (b *buffer) WriteTo(w io.Writer, header bool) (err error) {
-	return b.WriteAt(&writeAtWrapper{w}, 0, header)
+	return b.WriteAt(&writeAtWrapper{Writer: w}, -1, header)
 }
 
 // Free frees the buffer for reuse.
@@ -111,6 +115,8 @@ func (b *buffer) Len() int {
 
 func (b *buffer) grow() { b.buf = append(b.buf, sectionPool.Get().(*section)) }
 
+// writeAtWrapper wraps a io.Writer into a io.WriteAt.
+// This should only be used for a continuous write at given offset.
 type writeAtWrapper struct{ io.Writer }
 
 func (w *writeAtWrapper) WriteAt(p []byte, off int64) (n int, err error) { return w.Writer.Write(p) }

@@ -10,7 +10,6 @@ import (
 
 	"github.com/bits-and-blooms/bitset"
 	"github.com/yehan2002/errors"
-	"github.com/yehan2002/fastbytes/v2"
 )
 
 const (
@@ -86,7 +85,7 @@ func NewAnvil(rg Region, fs *Fs, r reader, readonly bool, fileSize int64) (a *An
 		return nil, errors.New("anvil: invalid anvil.Fs provided")
 	}
 
-	anvil := &Anvil{header: newHeader(), fs: fs, pos: rg, read: r, size: fileSize}
+	anvil := &Anvil{fs: fs, pos: rg, read: r, size: fileSize}
 
 	if !readonly {
 		var canWrite bool
@@ -97,24 +96,18 @@ func NewAnvil(rg Region, fs *Fs, r reader, readonly bool, fileSize int64) (a *An
 	}
 
 	if fileSize == 0 { // fast path for empty files
+		anvil.header = newHeader()
 		anvil.header.clear()
 		anvil.header.used = bitset.New(entries)
 		return anvil, nil
 	}
 
 	maxSection := uint(fileSize / sectionSize)
-	anvil.header.used = bitset.New(maxSection)
-
-	// read the file header
-	var size, timestamps [entries]uint32
-	if err = anvil.readUint32Section(size[:], 0); err == nil {
-		if err = anvil.readUint32Section(timestamps[:], sectionSize); err == nil {
-			if err = anvil.header.Read(&size, &timestamps, uint32(maxSection)); err == nil {
-				return anvil, nil
-			}
-		}
+	if anvil.header, err = ReadHeader(r, maxSection); err != nil {
+		return
 	}
-	return
+
+	return anvil, nil
 }
 
 // Read reads the entry at x,z to the given `reader`.
@@ -270,21 +263,6 @@ func (a *Anvil) Close() (err error) {
 	return
 }
 
-// readUint32Section reads a 4096 byte section at the given offset into the given uint32 slice.
-func (a *Anvil) readUint32Section(dst []uint32, offset int) error {
-	tmp := sectionPool.Get().(*section)
-	defer tmp.Free()
-
-	if n, err := a.read.ReadAt(tmp[:], int64(offset)); err != nil {
-		return errors.Wrap("anvil: unable to read file header", err)
-	} else if n != sectionSize {
-		return errors.Wrap("anvil: Incorrect number of bytes read", io.EOF)
-	}
-
-	fastbytes.BigEndian.ToU32(tmp[:], dst)
-	return nil
-}
-
 // readerForEntry returns a reader that reads the given entry.
 // The reader is only valid until the next call to `Write`
 func (a *Anvil) readerForEntry(x, z uint8, offset, length int64, external bool) (src io.ReadCloser, err error) {
@@ -353,6 +331,10 @@ func (a *Anvil) growFile(size uint) (offset uint, err error) {
 
 // updateHeader updates the offset, size and timestamp in the main header for the entry at x,z.
 func (a *Anvil) updateHeader(x, z uint8, offset uint, size uint8) (err error) {
+	if x > 31 || z > 31 {
+		panic("invalid position")
+	}
+
 	headerOffset := int64(x)<<2 | int64(z)<<7
 	entry := Entry{Offset: uint32(offset), Size: uint8(size), Timestamp: int32(time.Now().Unix())}
 
