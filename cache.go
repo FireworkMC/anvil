@@ -157,7 +157,7 @@ func (a *Cache) getFile(rg Region) (f *cachedAnvil, ok bool) {
 func Open(path string, readonly bool, cacheSize int) (c *Cache, err error) {
 	if path, err = filepath.Abs(path); err == nil {
 		var info os.FileInfo
-		if _, err = fs.Stat(path); err == nil {
+		if info, err = fs.Stat(path); err == nil {
 			if !info.IsDir() {
 				return nil, errors.New("anvil: Open: " + path + " is not a directory")
 			}
