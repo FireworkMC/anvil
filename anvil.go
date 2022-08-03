@@ -1,385 +1,175 @@
 package anvil
 
 import (
-	"encoding/binary"
-	"fmt"
 	"io"
+	"os"
 	"path/filepath"
 	"sync"
-	"time"
+	"sync/atomic"
 
-	"github.com/bits-and-blooms/bitset"
+	"github.com/hashicorp/golang-lru/simplelru"
+	"github.com/spf13/afero"
 	"github.com/yehan2002/errors"
 )
 
-const (
-	// ErrExternal returned if the chunk is in an external file.
-	// This error is only returned if the region file was opened as a single file.
-	ErrExternal = errors.Const("anvil: chunk is in separate file")
-	// ErrNotGenerated returned if the chunk has not been generated yet.
-	ErrNotGenerated = errors.Const("anvil: chunk has not been generated")
-	// ErrSize returned if the size of the anvil file is not a multiple of 4096.
-	ErrSize = errors.Const("anvil: invalid file size")
-	// ErrCorrupted the given file contains invalid/corrupted data
-	ErrCorrupted = errors.Const("anvil: corrupted file")
-	// ErrClosed the given file has already been closed
-	ErrClosed = errors.Const("anvil: file closed")
-)
-
-const (
-	// entries the number of entries in a region file
-	entries = 32 * 32
-	// sectionSize the size of a section
-	sectionSize     = 1 << sectionShift
-	sectionSizeMask = sectionSize - 1
-	sectionShift    = 12
-	entryHeaderSize = 5
-	// maxFileSections the maximum number of sections a file can contain
-	maxFileSections = 255 * entries
-)
-
-// Anvil is a single anvil region file.
-type Anvil struct {
-	mux    sync.RWMutex
-	header *Header
-
-	pos Region
-	fs  *Fs
-
-	size  int64
-	write writer
-	read  reader
-
-	closed bool
-
-	c  compressor
-	cm CompressMethod
+// CachedFile a cached anvil file
+type CachedFile struct {
+	*cachedFile
+	closer sync.Once
 }
 
-// OpenAnvil opens the given anvil file.
-// If readonly is set any attempts to modify the file will return an error.
-// If any data is stored in external files, any attempt to read it will return ErrExternal.
-// If an attempt is made to write a data that is over 1MB after compression, ErrExternal will be returned.
-// To allow reading and writing to external files use `Open` instead.
-func OpenAnvil(path string, readonly bool) (f *Anvil, err error) {
-	var r reader
-	var size int64
-	if path, err = filepath.Abs(path); err == nil {
-		if r, size, err = openFile(fs, path, readonly); err == nil {
-			f, err = NewAnvil(Region{0, 0}, NewFs(fs), r, readonly, size)
-		}
+type cachedFile struct {
+	*File
+	cache *Anvil
+
+	// useCount the number of users for this file
+	// This should only be modified atomically while holding read or write lock of `cache`
+	useCount int32
+}
+
+// Close closes the file.
+// Calling any methods after calling this will cause a panic.
+func (c *CachedFile) Close() (err error) {
+	c.closer.Do(func() { err = c.cache.free(c.cachedFile); c.cachedFile = nil })
+	return
+}
+
+// Anvil a anvil file cache.
+type Anvil struct {
+	fs    *Fs
+	inUse map[Region]*cachedFile
+
+	lru     *simplelru.LRU
+	lruSize int
+
+	readonly bool
+
+	mux sync.RWMutex
+}
+
+// Read reads the chunk data for the given location
+func (a *Anvil) Read(entryX, entryZ int32, read io.ReaderFrom) (n int64, err error) {
+	var f *cachedFile
+	if f, err = a.get(entryX>>5, entryZ>>5); err == nil {
+		defer a.free(f)
+		n, err = f.Read(uint8(entryX&0x1f), uint8(entryZ&0x1f), read)
 	}
 	return
 }
 
-// NewAnvil reads an anvil file from the given ReadAtCloser.
-// This has the same limitations as `OpenFile` if `fs` is nil.
-// If fileSize is 0, no attempt is made to read any headers.
-func NewAnvil(rg Region, fs *Fs, r reader, readonly bool, fileSize int64) (a *Anvil, err error) {
-	// check if the file size is 0 or a multiple of 4096
-	if fileSize&sectionSizeMask != 0 || (fileSize != 0 && fileSize < sectionSize*2) {
-		return nil, ErrSize
+// Write writes the chunk data for the given location
+func (a *Anvil) Write(entryX, entryZ int32, p []byte) (err error) {
+	var f *cachedFile
+	if f, err = a.get(entryX>>5, entryZ>>5); err == nil {
+		defer a.free(f)
+		err = f.Write(uint8(entryX&0x1f), uint8(entryZ&0x1f), p)
 	}
-
-	if fs != nil && fs.fs == nil {
-		return nil, errors.New("anvil: invalid anvil.Fs provided")
-	}
-
-	anvil := &Anvil{fs: fs, pos: rg, read: r, size: fileSize}
-
-	if !readonly {
-		var canWrite bool
-		anvil.write, canWrite = r.(writer)
-		if !canWrite {
-			return nil, errors.Error("anvil: ReadFile: `r` must implement anvil.Writer to be opened in write mode")
-		}
-	}
-
-	if fileSize == 0 { // fast path for empty files
-		anvil.header = newHeader()
-		anvil.header.clear()
-		anvil.header.used = bitset.New(entries)
-		return anvil, nil
-	}
-
-	maxSection := uint(fileSize / sectionSize)
-	if anvil.header, err = ReadHeader(r, maxSection); err != nil {
-		return
-	}
-
-	return anvil, nil
+	return
 }
 
-// Read reads the entry at x,z to the given `reader`.
-// `reader` must not retain the `io.Reader` passed to it.
-// `reader` must not return before reading has completed.
-func (a *Anvil) Read(x, z uint8, reader io.ReaderFrom) (n int64, err error) {
-	if x > 31 || z > 31 {
-		return 0, fmt.Errorf("anvil: invalid chunk position")
+// File opens the anvil file at rgX, rgZ.
+// Callers must close the returned file for it to be removed from the cache.
+func (a *Anvil) File(rgX, rgZ int32) (f *CachedFile, err error) {
+	c, err := a.get(rgX, rgZ)
+	if err != nil {
+		return nil, err
 	}
+	return &CachedFile{cachedFile: c}, nil
+}
 
+// get gets the anvil get for the given coords
+func (a *Anvil) get(rgX, rgZ int32) (f *cachedFile, err error) {
+	rg := Region{rgX, rgZ}
 	a.mux.RLock()
-	defer a.mux.RUnlock()
+	f, ok := a.getFile(rg)
+	a.mux.RUnlock()
 
-	if a.header == nil {
-		return 0, ErrClosed
-	}
-
-	entry := a.header.Get(x, z)
-
-	if !entry.Generated() {
-		return 0, ErrNotGenerated
-	}
-
-	offset := entry.OffsetBytes()
-	var length int64
-	var method CompressMethod
-	var external bool
-
-	if length, method, external, err = a.readEntryHeader(entry); err == nil {
-		var src io.ReadCloser
-		if src, err = a.readerForEntry(x, z, offset, length, external); err == nil {
-			if src, err = method.decompressor(src); err == nil {
-				n, err = reader.ReadFrom(src)
-				closeErr := src.Close()
-				if err == nil {
-					err = closeErr
+	if !ok {
+		a.mux.Lock()
+		defer a.mux.Unlock()
+		// check if the file was opened while we were waiting for the mux
+		if f, ok = a.getFile(rg); !ok {
+			var file *File
+			if v, ok := a.lru.Get(rg); ok { // check if the file is in the lru cache
+				a.lru.Remove(rg)
+				file = v.(*File)
+			} else { // read file from the disk
+				var r reader
+				var size int64
+				if r, size, err = a.fs.open(rg.x, rg.z, a.readonly); err == nil {
+					file, err = NewAnvil(rg, a.fs, r, a.readonly, size)
 				}
 			}
-		}
-	}
 
-	return 0, err
-}
-
-// Write updates the data for the entry at x,z to the given buffer.
-// The given buffer is compressed and written to the anvil file.
-// The compression method used can be changed using the `CompressionMethod` method.
-// If the data is larger than 1MB after compression, the data is stored externally.
-// Calling this function with an empty buffer is the equivalent of calling `Remove(x,z)`.
-func (a *Anvil) Write(x, z uint8, b []byte) (err error) {
-	if len(b) == 0 {
-		return a.Remove(x, z)
-	}
-
-	a.mux.Lock()
-	defer a.mux.Unlock()
-
-	// check if the write is valid
-	if err = a.checkWrite(x, z); err != nil {
-		return err
-	}
-
-	// compress the given buffer
-	var buf *buffer
-	if buf, err = a.compress(b); err != nil {
-		return errors.Wrap("anvil: error compressing data", err)
-	}
-	defer buf.Free()
-
-	size := sections(uint(buf.Len()))
-
-	if size > 255 {
-		if a.fs == nil {
-			return ErrExternal
-		}
-
-		cx, cz := a.pos.Chunk(x, z)
-		if err = a.fs.writeExternal(cx, cz, buf); err != nil {
-			return
-		}
-
-		method := buf.compress
-		buf.Free()
-		buf.Write([]byte{0})
-		buf.CompressMethod(method | externalMask)
-		size = 1
-	}
-
-	// try to find space to store the data
-	offset, hasSpace := a.header.FindSpace(size)
-
-	// If we don't have enough space, grow the file to to make space
-	if !hasSpace {
-		if offset, err = a.growFile(size); err != nil {
-			return errors.Wrap("anvil: unable to grow file", err)
-		}
-	}
-
-	if err = buf.WriteAt(a.write, int64(offset)*sectionSize, true); err != nil {
-		return errors.Wrap("anvil: unable to write entry data", err)
-	}
-	if err = a.write.Sync(); err != nil {
-		return errors.Wrap("anvil: unable to write entry data", err)
-	}
-
-	return a.updateHeader(x, z, offset, uint8(size))
-}
-
-// Remove removes the given entry from the file.
-func (a *Anvil) Remove(x, z uint8) (err error) {
-	a.mux.Lock()
-	defer a.mux.Unlock()
-
-	// check if the write is valid
-	if err = a.checkWrite(x, z); err == nil {
-		a.header.Remove(x, z)
-		// grow the file so that it has at least enough space to fit the header
-		if _, err = a.growFile(0); err == nil {
-			err = a.updateHeader(x, z, 0, 0)
-		}
-	}
-
-	return
-}
-
-// CompressionMethod sets the compression method to be used by the writer.
-func (a *Anvil) CompressionMethod(m CompressMethod) (err error) {
-	a.mux.Lock()
-	defer a.mux.Unlock()
-	var c compressor
-	if c, err = m.compressor(); err == nil {
-		a.cm, a.c = m, c
-	}
-	return
-}
-
-// Close closes the anvil file.
-func (a *Anvil) Close() (err error) {
-	a.mux.Lock()
-	defer a.mux.Unlock()
-	if !a.closed {
-		a.header.Free()
-		a.header = nil
-		if a.write != nil {
-			if err = a.write.Sync(); err != nil {
-				return
+			if err == nil {
+				f = &cachedFile{File: file, cache: a, useCount: 1}
+				a.inUse[rg] = f
 			}
 		}
-		err = a.read.Close()
-		a.closed = true
 	}
 
 	return
 }
 
-// readerForEntry returns a reader that reads the given entry.
-// The reader is only valid until the next call to `Write`
-func (a *Anvil) readerForEntry(x, z uint8, offset, length int64, external bool) (src io.ReadCloser, err error) {
-	if !external {
-		return io.NopCloser(io.NewSectionReader(a.read, offset+entryHeaderSize, length)), nil
-	} else if a.fs != nil {
-		return a.fs.readExternal(a.pos.Chunk(x, z))
-	}
-	return nil, ErrExternal
-}
+func (a *Anvil) free(f *cachedFile) (err error) {
+	a.mux.RLock()
+	newCount := atomic.AddInt32(&f.useCount, -1)
+	a.mux.RUnlock()
 
-// readEntryHeader reads the header for the given entry.
-func (a *Anvil) readEntryHeader(entry *Entry) (length int64, method CompressMethod, external bool, err error) {
-	header := [entryHeaderSize]byte{}
-	if _, err = a.read.ReadAt(header[:], entry.OffsetBytes()); err == nil {
-		// the first 4 bytes in the header holds the length of the data as a big endian uint32
-		length = int64(binary.BigEndian.Uint32(header[:]))
-		// the top bit of the 5th byte of the header indicates if the entry is stored externally
-		external = header[4]&externalMask != 0
-		// the lower bits hold the compression method used to compress the data
-		method = CompressMethod(header[4] &^ externalMask)
+	if newCount == 0 {
+		a.mux.Lock()
+		defer a.mux.Unlock()
+		if newCount = atomic.LoadInt32(&f.useCount); newCount == 0 {
 
-		// reduce the length by 1 since we already read the compression byte
-		length--
+			// evict the oldest file from the lru if adding a new element will cause a element to be evicted
+			// We do this to insure the file gets closed properly and to free all associated resources
+			if a.lru.Len() == a.lruSize {
+				if _, old, ok := a.lru.RemoveOldest(); ok {
+					if err = old.(*File).Close(); err != nil {
+						err = errors.Wrap("anvil.Cache: error occurred while evicting file", err)
+					}
+				}
+			}
 
-		if length/sectionSize > int64(entry.Size) {
-			return 0, 0, false, errors.CauseStr(ErrCorrupted, "chunk size mismatch")
+			evicted := a.lru.Add(f.pos, f.File)
+			if evicted {
+				// This should never happen since we manually evicted the oldest element
+				panic("anvil.Cache: File was incorrectly evicted")
+			}
+
+			delete(a.inUse, f.pos)
 		}
 	}
 	return
 }
 
-// checkWrite checks if the write is valid.
-// This checks if x,z are within bounds
-// and if the file was opened for writing and has not been closed.
-func (a *Anvil) checkWrite(x, z uint8) error {
-	if x > 31 || z > 31 {
-		return fmt.Errorf("anvil: invalid entry position")
-	}
-
-	if a.header == nil {
-		return ErrClosed
-	}
-
-	if a.write == nil {
-		return fmt.Errorf("anvil: file is opened in read-only mode")
-	}
-
-	return nil
-}
-
-// growFile grows the file to fit `size` more sections.
-func (a *Anvil) growFile(size uint) (offset uint, err error) {
-	fileSize := a.size
-
-	// make space for the header if the file does not have one.
-	if fileSize < sectionSize*2 {
-		fileSize = sectionSize * 2
-	}
-
-	offset = sections(uint(fileSize))
-	a.size = int64(offset+size) * sectionSize // insure the file size is a multiple of 4096 bytes
-	err = a.write.Truncate(a.size)
-	return
-}
-
-// updateHeader updates the offset, size and timestamp in the main header for the entry at x,z.
-func (a *Anvil) updateHeader(x, z uint8, offset uint, size uint8) (err error) {
-	if x > 31 || z > 31 {
-		panic("invalid position")
-	}
-
-	headerOffset := int64(x)<<2 | int64(z)<<7
-	entry := Entry{Offset: uint32(offset), Size: uint8(size), Timestamp: int32(time.Now().Unix())}
-
-	if err = a.writeUint32At(uint32(offset)<<8|uint32(size), headerOffset); err != nil {
-		return errors.Wrap("anvil: unable to update header", err)
-	}
-
-	a.header.Set(x, z, entry)
-
-	if err = a.writeUint32At(uint32(entry.Timestamp), headerOffset+sectionSize); err != nil {
-		return errors.Wrap("anvil: unable to update timestamp", err)
+func (a *Anvil) getFile(rg Region) (f *cachedFile, ok bool) {
+	f, ok = a.inUse[rg]
+	if ok {
+		atomic.AddInt32(&f.useCount, 1)
 	}
 	return
 }
 
-// writeUint32 writes the given uint32 at the given position
-// and syncs the changes to disk.
-func (a *Anvil) writeUint32At(v uint32, offset int64) (err error) {
-	var tmp [4]byte
-	binary.BigEndian.PutUint32(tmp[:], v)
-	if _, err = a.write.WriteAt(tmp[:], offset); err == nil {
-		err = a.write.Sync()
-	}
-
-	return
-}
-
-// compress compresses the given byte slice and writes it to a buffer.
-func (a *Anvil) compress(b []byte) (buf *buffer, err error) {
-	if a.cm == 0 || a.c == nil {
-		a.cm = DefaultCompression
-		if a.c, err = a.cm.compressor(); err != nil {
-			return nil, err
+// Open opens the given directory.
+func Open(path string, readonly bool, cacheSize int) (c *Anvil, err error) {
+	if path, err = filepath.Abs(path); err == nil {
+		var info os.FileInfo
+		if info, err = fs.Stat(path); err == nil {
+			if !info.IsDir() {
+				return nil, errors.New("anvil: Open: " + path + " is not a directory")
+			}
+			return OpenFs(NewFs(afero.NewBasePathFs(fs, path)), readonly, cacheSize)
 		}
 	}
+	return
+}
 
-	buf = &buffer{}
-	buf.CompressMethod(a.cm)
-	a.c.Reset(buf)
-
-	if _, err = a.c.Write(b); err == nil {
-		if err = a.c.Close(); err == nil {
-			return buf, nil
-		}
+// OpenFs opens the given directory.
+func OpenFs(fs *Fs, readonly bool, cacheSize int) (c *Anvil, err error) {
+	cache := Anvil{fs: fs, inUse: map[Region]*cachedFile{}, lruSize: cacheSize, readonly: readonly}
+	if cache.lru, err = simplelru.NewLRU(cacheSize, nil); err == nil {
+		return &cache, nil
 	}
-
-	return nil, err
+	return
 }

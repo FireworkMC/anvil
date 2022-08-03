@@ -15,7 +15,7 @@ var headerPool = sync.Pool{New: func() interface{} { return &[entries]Entry{} }}
 // Region the position of a Region file
 type Region struct{ x, z int32 }
 
-// Chunk gets the chunk position for the given postion
+// Chunk gets the chunk position for the given position
 func (r *Region) Chunk(x, z uint8) (int32, int32) { return r.x<<5 | int32(x), r.z<<5 | int32(z) }
 
 // sections returns the minimum number of sections to store the given number of bytes
@@ -164,7 +164,7 @@ func (h *Header) Read(size, timestamps *[entries]uint32, fileSections uint32) (e
 		for p := uint32(0); p < size; p++ {
 			pos := offset + p
 
-			// check if the postion is within the file
+			// check if the position is within the file
 			if pos > fileSections {
 				return errors.CauseStr(ErrCorrupted, "entry is outside the file")
 			}

@@ -17,6 +17,10 @@ type reader interface {
 	io.Closer
 }
 
+type readAtCloser struct{ io.ReaderAt }
+
+func (r *readAtCloser) Close() error { return nil }
+
 // writer a writer to modify an anvil file.
 // The value returned by Fs.Open should implement this interface if the anvil file is modifiable
 type writer interface {
