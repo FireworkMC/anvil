@@ -19,15 +19,15 @@ func (b *bufferTest) TestBufferWrite(is is.Is) {
 	defer buf.Free()
 
 	data := []byte{1, 2, 3, 4}
-	expected := append(zeroHeader[:], data...)
+	expected := data
 	n, _ := buf.Write(data)
 	is(n == len(data), "Write returned an incorrect number of bytes")
-	is.Equal(buf.buf[0][:buf.length], expected, "incorrect internal state")
+	is.Equal(buf.buf[0][5:buf.length], expected, "incorrect internal state")
 
-	expected = append(expected, data...)
+	expected = append(data, data...)
 	n, _ = buf.Write(data)
 	is(n == len(data), "Write returned an incorrect number of bytes")
-	is.Equal(buf.buf[0][:buf.length], expected, "incorrect internal state")
+	is.Equal(buf.buf[0][5:buf.length], expected, "incorrect internal state")
 }
 
 func (b *bufferTest) TestBufferWriteLarge(is is.Is) {
