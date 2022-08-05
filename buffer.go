@@ -8,7 +8,7 @@ import (
 
 var sectionPool = sync.Pool{New: func() interface{} { return &section{} }}
 
-type section [sectionSize]byte
+type section [SectionSize]byte
 
 func (b *section) Free() { sectionPool.Put(b) }
 
@@ -67,7 +67,7 @@ func (b *buffer) WriteAt(w io.WriterAt, off int64, header bool) error {
 		startOffset = 0
 	}
 
-	if off > 0 && off < sectionSize*2 {
+	if off > 0 && off < SectionSize*2 {
 		panic("invalid offset")
 	}
 

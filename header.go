@@ -10,23 +10,27 @@ import (
 	"github.com/yehan2002/fastbytes/v2"
 )
 
-var headerPool = sync.Pool{New: func() interface{} { return &[entries]Entry{} }}
+var headerPool = sync.Pool{New: func() interface{} { return &[Entries]Entry{} }}
 
-// Region the position of a Region file
-type Region struct{ x, z int32 }
+// Pos the position of a anvil file.
+// Normally the x and z values are the x and z values in the filename of the anvil file.
+type Pos struct{ x, z int32 }
 
-// Chunk gets the chunk position for the given position
-func (r *Region) Chunk(x, z uint8) (int32, int32) { return r.x<<5 | int32(x), r.z<<5 | int32(z) }
+// External gets the x and z for an entry that is stored in a separate file.
+func (r *Pos) External(x, z uint8) (int32, int32) { return r.x<<5 | int32(x), r.z<<5 | int32(z) }
+
+// NewPos creates a new position.
+func NewPos(x, z int32) Pos { return Pos{x: x, z: z} }
 
 // sections returns the minimum number of sections to store the given number of bytes
-func sections(v uint) uint { return (v + sectionSizeMask) / sectionSize }
+func sections(v uint) uint { return (v + sectionSizeMask) / SectionSize }
 
-// Entry an entry in the region file
+// Entry an entry in the anvil file
 type Entry struct {
 	// Size the number of sections used by this entry
 	// If this is zero the data has not been generated yet and is not stored in this file.
 	Size uint8
-	// Offset the offset of the chunk in the region file (in sections).
+	// Offset the offset of the chunk in the anvil file (in sections).
 	// The maximum offset is (2<<24)-1 sections.
 	Offset uint32
 	// Timestamp the Timestamp when the chunk was last modified.
@@ -38,11 +42,11 @@ type Entry struct {
 func (e *Entry) Generated() bool { return e.Offset != 0 && e.Size != 0 }
 
 // OffsetBytes returns the offset in bytes
-func (e *Entry) OffsetBytes() int64 { return int64(e.Offset) * sectionSize }
+func (e *Entry) OffsetBytes() int64 { return int64(e.Offset) * SectionSize }
 
-// Header the header of the region file.
+// Header the header of the anvil file.
 type Header struct {
-	entries *[entries]Entry
+	entries *[Entries]Entry
 	used    *bitset.BitSet
 }
 
@@ -55,12 +59,12 @@ func (h *Header) Get(x, z uint8) *Entry {
 	return &h.entries[uint16(x&0x1f)|(uint16(z&0x1f)<<5)]
 }
 
-func (h *Header) clear() { *h.entries = [entries]Entry{}; h.used.ClearAll() }
+func (h *Header) clear() { *h.entries = [Entries]Entry{}; h.used.ClearAll() }
 
 // Set updates the entry at x,z and the given marks the
 // space used by the given entry in the `used` bitset as used.
 func (h *Header) Set(x, z uint8, c Entry) {
-	if c.Offset < 2 || c.Offset+uint32(c.Size) > maxFileSections {
+	if c.Offset < 2 || c.Offset+uint32(c.Size) > MaxFileSections {
 		if c.Offset == 0 && c.Size == 0 {
 			h.Remove(x, z)
 			return
@@ -143,21 +147,14 @@ func (h *Header) FindSpace(size uint) (offset uint, found bool) {
 // Callers must not use the header after calling this.
 func (h *Header) Free() { headerPool.Put(h.entries) }
 
-// Read reads the header from the given arrays.
-// `size` should contains the size and position of entries, with the least significant byte
-// being the number of sections used by the entry and the rest containing the
-// offset where the entry starts.
-// `timestamps` should be an array of timestamps when the entries were last modified
-// as the number of seconds since January 1, 1970 UTC.
-// This function expects `size`, `timestamps` to be in the hosts byte order.
-// `fileSections` is the max amount of sections that can be used by the entries.
-// If `fileSections` is 0, `maxFileSections` is used instead.
-func (h *Header) Read(size, timestamps *[entries]uint32, fileSections uint32) (err error) {
+// load reads the header from the given arrays.
+// See comment on `LoadHeader`.
+func (h *Header) load(size, timestamps *[Entries]uint32, fileSections uint32) (err error) {
 	if fileSections == 0 {
-		fileSections = maxFileSections
+		fileSections = MaxFileSections
 	}
 
-	for i := 0; i < entries; i++ {
+	for i := 0; i < Entries; i++ {
 
 		size, offset := size[i]&0xFF, size[i]>>8
 
@@ -183,9 +180,8 @@ func (h *Header) Read(size, timestamps *[entries]uint32, fileSections uint32) (e
 }
 
 // Write writes the header to the given arrays.
-// See comment on `Header.Read`.
-func (h *Header) Write(size, timestamps *[entries]uint32) {
-	for i := 0; i < entries; i++ {
+func (h *Header) Write(size, timestamps *[Entries]uint32) {
+	for i := 0; i < Entries; i++ {
 		entry := h.entries[i]
 		size[i] = entry.Offset<<8 | uint32(entry.Size)
 		timestamps[i] = uint32(entry.Timestamp)
@@ -197,36 +193,50 @@ func (h *Header) Write(size, timestamps *[entries]uint32) {
 // If `maxSections` != 0, this returns an error if the header references more than
 // `maxSections` sections.
 func ReadHeader(r io.ReaderAt, maxSection uint) (h *Header, err error) {
-	h = newHeader()
-
-	if maxSection == 0 {
-		h.used = bitset.New(entries)
-	} else {
-		h.used = bitset.New(maxSection)
-	}
-
 	// read the file header
-	var size, timestamps [entries]uint32
-	if err = h.readUint32Section(r, size[:], 0); err == nil {
-		if err = h.readUint32Section(r, timestamps[:], sectionSize); err == nil {
-			if err = h.Read(&size, &timestamps, uint32(maxSection)); err == nil {
-				return h, nil
-			}
+	var size, timestamps [Entries]uint32
+	if err = readUint32Section(r, size[:], 0); err == nil {
+		if err = readUint32Section(r, timestamps[:], SectionSize); err == nil {
+			return LoadHeader(&size, &timestamps, maxSection)
 		}
 	}
 	return nil, err
 }
 
-func newHeader() *Header { return &Header{entries: headerPool.Get().(*[entries]Entry)} }
+// LoadHeader reads the header from the given arrays.
+// `size` should contains the size and position of entries, with the least significant byte
+// being the number of sections used by the entry and the rest containing the
+// offset where the entry starts.
+// `timestamps` should be an array of timestamps when the entries were last modified
+// as the number of seconds since January 1, 1970 UTC.
+// This function expects `size`, `timestamps` to be in the hosts byte order.
+// `fileSections` is the max amount of sections that can be used by the entries.
+// If `fileSections` is 0, `maxFileSections` is used instead.
+func LoadHeader(size, timestamps *[Entries]uint32, fileSections uint) (h *Header, err error) {
+	h = newHeader()
+
+	if fileSections == 0 {
+		h.used = bitset.New(Entries)
+	} else {
+		h.used = bitset.New(fileSections)
+	}
+
+	if err = h.load(size, timestamps, uint32(fileSections)); err == nil {
+		return h, nil
+	}
+	return nil, err
+}
+
+func newHeader() *Header { return &Header{entries: headerPool.Get().(*[Entries]Entry)} }
 
 // readUint32Section reads a 4096 byte section at the given offset into the given uint32 slice.
-func (h *Header) readUint32Section(read io.ReaderAt, dst []uint32, offset int) error {
+func readUint32Section(read io.ReaderAt, dst []uint32, offset int) error {
 	tmp := sectionPool.Get().(*section)
 	defer tmp.Free()
 
 	if n, err := read.ReadAt(tmp[:], int64(offset)); err != nil {
 		return errors.Wrap("anvil: unable to read file header", err)
-	} else if n != sectionSize {
+	} else if n != SectionSize {
 		return errors.Wrap("anvil: Incorrect number of bytes read", io.EOF)
 	}
 

@@ -13,7 +13,7 @@ type headerTest struct{}
 
 func makeHeader() *Header {
 	h := newHeader()
-	h.used = bitset.New(entries)
+	h.used = bitset.New(Entries)
 	h.used.Set(0)
 	h.used.Set(1)
 	return h
@@ -55,7 +55,7 @@ func (*headerTest) TestSetRemove(is is.Is) {
 }
 
 func (*headerTest) TestGet(is is.Is) {
-	var actual [entries]Entry
+	var actual [Entries]Entry
 
 	header := newHeader()
 	header.clear()

@@ -12,32 +12,37 @@ import (
 	"github.com/yehan2002/errors"
 )
 
-// CachedFile a cached anvil file
-type CachedFile struct {
-	*cachedFile
-	closer sync.Once
-}
+const (
+	// ErrExternal returned if the chunk is in an external file.
+	// This error is only returned if the anvil file was opened as a single file.
+	ErrExternal = errors.Const("anvil: chunk is in separate file")
+	// ErrNotGenerated returned if the chunk has not been generated yet.
+	ErrNotGenerated = errors.Const("anvil: chunk has not been generated")
+	// ErrSize returned if the size of the anvil file is not a multiple of 4096.
+	ErrSize = errors.Const("anvil: invalid file size")
+	// ErrCorrupted the given file contains invalid/corrupted data
+	ErrCorrupted = errors.Const("anvil: corrupted file")
+	// ErrClosed the given file has already been closed
+	ErrClosed = errors.Const("anvil: file closed")
+)
 
-type cachedFile struct {
-	*File
-	cache *Anvil
+const (
+	sectionSizeMask = SectionSize - 1
+	sectionShift    = 12
+	entryHeaderSize = 5
 
-	// useCount the number of users for this file
-	// This should only be modified atomically while holding read or write lock of `cache`
-	useCount int32
-}
-
-// Close closes the file.
-// Calling any methods after calling this will cause a panic.
-func (c *CachedFile) Close() (err error) {
-	c.closer.Do(func() { err = c.cache.free(c.cachedFile); c.cachedFile = nil })
-	return
-}
+	// Entries the number of Entries in a anvil file
+	Entries = 32 * 32
+	// SectionSize the size of a section
+	SectionSize = 1 << sectionShift
+	// MaxFileSections the maximum number of sections a file can contain
+	MaxFileSections = 255 * Entries
+)
 
 // Anvil a anvil file cache.
 type Anvil struct {
 	fs    *Fs
-	inUse map[Region]*cachedFile
+	inUse map[Pos]*cachedFile
 
 	lru     *simplelru.LRU
 	lruSize int
@@ -79,7 +84,7 @@ func (a *Anvil) File(rgX, rgZ int32) (f *CachedFile, err error) {
 
 // get gets the anvil get for the given coords
 func (a *Anvil) get(rgX, rgZ int32) (f *cachedFile, err error) {
-	rg := Region{rgX, rgZ}
+	rg := Pos{rgX, rgZ}
 	a.mux.RLock()
 	f, ok := a.getFile(rg)
 	a.mux.RUnlock()
@@ -143,7 +148,7 @@ func (a *Anvil) free(f *cachedFile) (err error) {
 	return
 }
 
-func (a *Anvil) getFile(rg Region) (f *cachedFile, ok bool) {
+func (a *Anvil) getFile(rg Pos) (f *cachedFile, ok bool) {
 	f, ok = a.inUse[rg]
 	if ok {
 		atomic.AddInt32(&f.useCount, 1)
@@ -167,7 +172,7 @@ func Open(path string, readonly bool, cacheSize int) (c *Anvil, err error) {
 
 // OpenFs opens the given directory.
 func OpenFs(fs *Fs, readonly bool, cacheSize int) (c *Anvil, err error) {
-	cache := Anvil{fs: fs, inUse: map[Region]*cachedFile{}, lruSize: cacheSize, readonly: readonly}
+	cache := Anvil{fs: fs, inUse: map[Pos]*cachedFile{}, lruSize: cacheSize, readonly: readonly}
 	if cache.lru, err = simplelru.NewLRU(cacheSize, nil); err == nil {
 		return &cache, nil
 	}

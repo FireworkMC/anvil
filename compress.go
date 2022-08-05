@@ -9,7 +9,7 @@ import (
 	"github.com/yehan2002/errors"
 )
 
-// CompressMethod the compression method used for compressing region data
+// CompressMethod the compression method used for compressing section data
 type CompressMethod byte
 
 // DefaultCompression the default compression method to be used

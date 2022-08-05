@@ -32,17 +32,17 @@ type writer interface {
 var _ writer = afero.File(nil)
 
 // NewFs creates an Fs from the given afero.Fs.
-func NewFs(f afero.Fs) *Fs { return &Fs{fs: f, RegionFmt: "r.%d.%d.mca", ChunkFmt: "c.%d.%d.mcc"} }
+func NewFs(f afero.Fs) *Fs { return &Fs{fs: f, AnvilFmt: "r.%d.%d.mca", ChunkFmt: "c.%d.%d.mcc"} }
 
 // Fs handles opening anvil files.
 type Fs struct {
-	fs                  afero.Fs
-	RegionFmt, ChunkFmt string
+	fs                 afero.Fs
+	AnvilFmt, ChunkFmt string
 }
 
-// open opens the given region file
+// open opens the given anvil file
 func (d *Fs) open(anvilX, anvilZ int32, readonly bool) (r reader, size int64, err error) {
-	if r, size, err = openFile(d.fs, fmt.Sprintf(d.RegionFmt, anvilX, anvilZ), readonly); err == nil {
+	if r, size, err = openFile(d.fs, fmt.Sprintf(d.AnvilFmt, anvilX, anvilZ), readonly); err == nil {
 		return r, size, nil
 	}
 	return nil, 0, err

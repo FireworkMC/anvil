@@ -12,38 +12,12 @@ import (
 	"github.com/yehan2002/errors"
 )
 
-const (
-	// ErrExternal returned if the chunk is in an external file.
-	// This error is only returned if the region file was opened as a single file.
-	ErrExternal = errors.Const("anvil: chunk is in separate file")
-	// ErrNotGenerated returned if the chunk has not been generated yet.
-	ErrNotGenerated = errors.Const("anvil: chunk has not been generated")
-	// ErrSize returned if the size of the anvil file is not a multiple of 4096.
-	ErrSize = errors.Const("anvil: invalid file size")
-	// ErrCorrupted the given file contains invalid/corrupted data
-	ErrCorrupted = errors.Const("anvil: corrupted file")
-	// ErrClosed the given file has already been closed
-	ErrClosed = errors.Const("anvil: file closed")
-)
-
-const (
-	// entries the number of entries in a region file
-	entries = 32 * 32
-	// sectionSize the size of a section
-	sectionSize     = 1 << sectionShift
-	sectionSizeMask = sectionSize - 1
-	sectionShift    = 12
-	entryHeaderSize = 5
-	// maxFileSections the maximum number of sections a file can contain
-	maxFileSections = 255 * entries
-)
-
-// File is a single anvil region file.
+// File is a single anvil anvil file.
 type File struct {
 	mux    sync.RWMutex
 	header *Header
 
-	pos Region
+	pos Pos
 	fs  *Fs
 
 	size  int64
@@ -56,6 +30,21 @@ type File struct {
 	cm CompressMethod
 }
 
+// CachedFile a cached anvil file
+type CachedFile struct {
+	*cachedFile
+	closer sync.Once
+}
+
+type cachedFile struct {
+	*File
+	cache *Anvil
+
+	// useCount the number of users for this file
+	// This should only be modified atomically while holding read or write lock of `cache`
+	useCount int32
+}
+
 // OpenAnvil opens the given anvil file.
 // If readonly is set any attempts to modify the file will return an error.
 // If any data is stored in external files, any attempt to read it will return ErrExternal.
@@ -66,7 +55,7 @@ func OpenAnvil(path string, readonly bool) (f *File, err error) {
 	var size int64
 	if path, err = filepath.Abs(path); err == nil {
 		if r, size, err = openFile(fs, path, readonly); err == nil {
-			f, err = NewAnvil(Region{0, 0}, NewFs(fs), r, readonly, size)
+			f, err = NewAnvil(Pos{0, 0}, NewFs(fs), r, readonly, size)
 		}
 	}
 	return
@@ -75,9 +64,9 @@ func OpenAnvil(path string, readonly bool) (f *File, err error) {
 // NewAnvil reads an anvil file from the given ReadAtCloser.
 // This has the same limitations as `OpenFile` if `fs` is nil.
 // If fileSize is 0, no attempt is made to read any headers.
-func NewAnvil(rg Region, fs *Fs, r io.ReaderAt, readonly bool, fileSize int64) (a *File, err error) {
+func NewAnvil(rg Pos, fs *Fs, r io.ReaderAt, readonly bool, fileSize int64) (a *File, err error) {
 	// check if the file size is 0 or a multiple of 4096
-	if fileSize&sectionSizeMask != 0 || (fileSize != 0 && fileSize < sectionSize*2) {
+	if fileSize&sectionSizeMask != 0 || (fileSize != 0 && fileSize < SectionSize*2) {
 		return nil, ErrSize
 	}
 
@@ -107,11 +96,11 @@ func NewAnvil(rg Region, fs *Fs, r io.ReaderAt, readonly bool, fileSize int64) (
 	if fileSize == 0 { // fast path for empty files
 		anvil.header = newHeader()
 		anvil.header.clear()
-		anvil.header.used = bitset.New(entries)
+		anvil.header.used = bitset.New(Entries)
 		return anvil, nil
 	}
 
-	maxSection := uint(fileSize / sectionSize)
+	maxSection := uint(fileSize / SectionSize)
 	if anvil.header, err = ReadHeader(r, maxSection); err != nil {
 		return
 	}
@@ -193,7 +182,7 @@ func (a *File) Write(x, z uint8, b []byte) (err error) {
 			return ErrExternal
 		}
 
-		cx, cz := a.pos.Chunk(x, z)
+		cx, cz := a.pos.External(x, z)
 		if err = a.fs.writeExternal(cx, cz, buf); err != nil {
 			return
 		}
@@ -215,7 +204,7 @@ func (a *File) Write(x, z uint8, b []byte) (err error) {
 		}
 	}
 
-	if err = buf.WriteAt(a.write, int64(offset)*sectionSize, true); err != nil {
+	if err = buf.WriteAt(a.write, int64(offset)*SectionSize, true); err != nil {
 		return errors.Wrap("anvil: unable to write entry data", err)
 	}
 	if err = a.write.Sync(); err != nil {
@@ -278,7 +267,7 @@ func (a *File) readerForEntry(x, z uint8, offset, length int64, external bool) (
 	if !external {
 		return io.NopCloser(io.NewSectionReader(a.read, offset+entryHeaderSize, length)), nil
 	} else if a.fs != nil {
-		return a.fs.readExternal(a.pos.Chunk(x, z))
+		return a.fs.readExternal(a.pos.External(x, z))
 	}
 	return nil, ErrExternal
 }
@@ -297,7 +286,7 @@ func (a *File) readEntryHeader(entry *Entry) (length int64, method CompressMetho
 		// reduce the length by 1 since we already read the compression byte
 		length--
 
-		if length/sectionSize > int64(entry.Size) {
+		if length/SectionSize > int64(entry.Size) {
 			return 0, 0, false, errors.CauseStr(ErrCorrupted, "chunk size mismatch")
 		}
 	}
@@ -328,12 +317,12 @@ func (a *File) growFile(size uint) (offset uint, err error) {
 	fileSize := a.size
 
 	// make space for the header if the file does not have one.
-	if fileSize < sectionSize*2 {
-		fileSize = sectionSize * 2
+	if fileSize < SectionSize*2 {
+		fileSize = SectionSize * 2
 	}
 
 	offset = sections(uint(fileSize))
-	a.size = int64(offset+size) * sectionSize // insure the file size is a multiple of 4096 bytes
+	a.size = int64(offset+size) * SectionSize // insure the file size is a multiple of 4096 bytes
 	err = a.write.Truncate(a.size)
 	return
 }
@@ -353,7 +342,7 @@ func (a *File) updateHeader(x, z uint8, offset uint, size uint8) (err error) {
 
 	a.header.Set(x, z, entry)
 
-	if err = a.writeUint32At(uint32(entry.Timestamp), headerOffset+sectionSize); err != nil {
+	if err = a.writeUint32At(uint32(entry.Timestamp), headerOffset+SectionSize); err != nil {
 		return errors.Wrap("anvil: unable to update timestamp", err)
 	}
 	return
@@ -391,4 +380,11 @@ func (a *File) compress(b []byte) (buf *buffer, err error) {
 	}
 
 	return nil, err
+}
+
+// Close closes the file.
+// Calling any methods after calling this will cause a panic.
+func (c *CachedFile) Close() (err error) {
+	c.closer.Do(func() { err = c.cache.free(c.cachedFile); c.cachedFile = nil })
+	return
 }
