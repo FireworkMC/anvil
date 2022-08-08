@@ -5,7 +5,6 @@ import (
 	"os"
 	"path/filepath"
 	"sync"
-	"sync/atomic"
 
 	"github.com/hashicorp/golang-lru/simplelru"
 	"github.com/spf13/afero"
@@ -107,7 +106,8 @@ func (a *Anvil) get(rgX, rgZ int32) (f *cachedFile, err error) {
 			}
 
 			if err == nil {
-				f = &cachedFile{File: file, cache: a, useCount: 1}
+				f = &cachedFile{File: file, cache: a}
+				f.useCount.Add(1)
 				a.inUse[rg] = f
 			}
 		}
@@ -118,13 +118,13 @@ func (a *Anvil) get(rgX, rgZ int32) (f *cachedFile, err error) {
 
 func (a *Anvil) free(f *cachedFile) (err error) {
 	a.mux.RLock()
-	newCount := atomic.AddInt32(&f.useCount, -1)
+	newCount := f.useCount.Add(-1)
 	a.mux.RUnlock()
 
 	if newCount == 0 {
 		a.mux.Lock()
 		defer a.mux.Unlock()
-		if newCount = atomic.LoadInt32(&f.useCount); newCount == 0 {
+		if newCount = f.useCount.Load(); newCount == 0 {
 
 			// evict the oldest file from the lru if adding a new element will cause a element to be evicted
 			// We do this to insure the file gets closed properly and to free all associated resources
@@ -151,7 +151,7 @@ func (a *Anvil) free(f *cachedFile) (err error) {
 func (a *Anvil) getFile(rg Pos) (f *cachedFile, ok bool) {
 	f, ok = a.inUse[rg]
 	if ok {
-		atomic.AddInt32(&f.useCount, 1)
+		f.useCount.Add(1)
 	}
 	return
 }

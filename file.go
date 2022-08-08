@@ -12,7 +12,8 @@ import (
 	"github.com/yehan2002/errors"
 )
 
-// File is a single anvil anvil file.
+// File is a single anvil file.
+// All functions can be called concurrently from multiple goroutines.
 type File struct {
 	mux    sync.RWMutex
 	header *Header
@@ -24,33 +25,16 @@ type File struct {
 	write writer
 	read  reader
 
-	closed bool
-
 	c  compressor
 	cm CompressMethod
 }
 
-// CachedFile a cached anvil file
-type CachedFile struct {
-	*cachedFile
-	closer sync.Once
-}
-
-type cachedFile struct {
-	*File
-	cache *Anvil
-
-	// useCount the number of users for this file
-	// This should only be modified atomically while holding read or write lock of `cache`
-	useCount int32
-}
-
-// OpenAnvil opens the given anvil file.
+// OpenFile opens the given anvil file.
 // If readonly is set any attempts to modify the file will return an error.
 // If any data is stored in external files, any attempt to read it will return ErrExternal.
 // If an attempt is made to write a data that is over 1MB after compression, ErrExternal will be returned.
-// To allow reading and writing to external files use `Open` instead.
-func OpenAnvil(path string, readonly bool) (f *File, err error) {
+// To allow reading and writing to external files use [Open] instead.
+func OpenFile(path string, readonly bool) (f *File, err error) {
 	var r reader
 	var size int64
 	if path, err = filepath.Abs(path); err == nil {
@@ -62,7 +46,7 @@ func OpenAnvil(path string, readonly bool) (f *File, err error) {
 }
 
 // NewAnvil reads an anvil file from the given ReadAtCloser.
-// This has the same limitations as `OpenFile` if `fs` is nil.
+// This has the same limitations as [OpenFile] if `fs` is nil.
 // If fileSize is 0, no attempt is made to read any headers.
 func NewAnvil(rg Pos, fs *Fs, r io.ReaderAt, readonly bool, fileSize int64) (a *File, err error) {
 	// check if the file size is 0 or a multiple of 4096
@@ -109,7 +93,7 @@ func NewAnvil(rg Pos, fs *Fs, r io.ReaderAt, readonly bool, fileSize int64) (a *
 }
 
 // Read reads the entry at x,z to the given `reader`.
-// `reader` must not retain the `io.Reader` passed to it.
+// `reader` must not retain the [io.Reader] passed to it.
 // `reader` must not return before reading has completed.
 func (a *File) Read(x, z uint8, reader io.ReaderFrom) (n int64, err error) {
 	if x > 31 || z > 31 {
@@ -152,7 +136,7 @@ func (a *File) Read(x, z uint8, reader io.ReaderFrom) (n int64, err error) {
 
 // Write updates the data for the entry at x,z to the given buffer.
 // The given buffer is compressed and written to the anvil file.
-// The compression method used can be changed using the `CompressionMethod` method.
+// The compression method used can be changed using the [CompressMethod] method.
 // If the data is larger than 1MB after compression, the data is stored externally.
 // Calling this function with an empty buffer is the equivalent of calling `Remove(x,z)`.
 func (a *File) Write(x, z uint8, b []byte) (err error) {
@@ -162,6 +146,10 @@ func (a *File) Write(x, z uint8, b []byte) (err error) {
 
 	a.mux.Lock()
 	defer a.mux.Unlock()
+
+	if a.header == nil {
+		return nil
+	}
 
 	// check if the write is valid
 	if err = a.checkWrite(x, z); err != nil {
@@ -219,6 +207,10 @@ func (a *File) Remove(x, z uint8) (err error) {
 	a.mux.Lock()
 	defer a.mux.Unlock()
 
+	if a.header == nil {
+		return ErrClosed
+	}
+
 	// check if the write is valid
 	if err = a.checkWrite(x, z); err == nil {
 		a.header.Remove(x, z)
@@ -235,6 +227,11 @@ func (a *File) Remove(x, z uint8) (err error) {
 func (a *File) CompressionMethod(m CompressMethod) (err error) {
 	a.mux.Lock()
 	defer a.mux.Unlock()
+
+	if a.header == nil {
+		return ErrClosed
+	}
+
 	var c compressor
 	if c, err = m.compressor(); err == nil {
 		a.cm, a.c = m, c
@@ -246,7 +243,7 @@ func (a *File) CompressionMethod(m CompressMethod) (err error) {
 func (a *File) Close() (err error) {
 	a.mux.Lock()
 	defer a.mux.Unlock()
-	if !a.closed {
+	if a.header != nil {
 		a.header.Free()
 		a.header = nil
 		if a.write != nil {
@@ -255,7 +252,6 @@ func (a *File) Close() (err error) {
 			}
 		}
 		err = a.read.Close()
-		a.closed = true
 	}
 
 	return
@@ -380,11 +376,4 @@ func (a *File) compress(b []byte) (buf *buffer, err error) {
 	}
 
 	return nil, err
-}
-
-// Close closes the file.
-// Calling any methods after calling this will cause a panic.
-func (c *CachedFile) Close() (err error) {
-	c.closer.Do(func() { err = c.cache.free(c.cachedFile); c.cachedFile = nil })
-	return
 }
