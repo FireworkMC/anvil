@@ -108,7 +108,7 @@ func testRoundtrip(is is.Is, cm CompressMethod, name string, sections [][]byte) 
 	name = fmt.Sprintf("%s-%s.mca", name, cm.String())
 	file := mem.NewFileHandle(mem.CreateFile(name))
 
-	f, err := NewAnvil(Pos{0, 0}, nil, file, false, 0)
+	f, err := NewAnvil(0, 0, nil, file, false, 0)
 	is(err == nil, "unexpected error occurred while creating anvil file: %s", err)
 
 	f.CompressionMethod(cm)
@@ -129,7 +129,7 @@ func testRoundtrip(is is.Is, cm CompressMethod, name string, sections [][]byte) 
 		bb.Reset()
 	}
 
-	f, err = NewAnvil(Pos{0, 0}, nil, file, false, file.Info().Size())
+	f, err = NewAnvil(0, 0, nil, file, false, file.Info().Size())
 	is(err == nil, "unexpected error occurred while opening anvil file: %s", err)
 	for i, buf := range sections {
 		_, err = f.Read(uint8(i&0x1f), uint8(i>>5), &bb)

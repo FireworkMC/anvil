@@ -18,7 +18,7 @@ type File struct {
 	mux    sync.RWMutex
 	header *Header
 
-	pos Pos
+	pos pos
 	fs  *Fs
 
 	size  int64
@@ -39,7 +39,7 @@ func OpenFile(path string, readonly bool) (f *File, err error) {
 	var size int64
 	if path, err = filepath.Abs(path); err == nil {
 		if r, size, err = openFile(fs, path, readonly); err == nil {
-			f, err = NewAnvil(Pos{0, 0}, NewFs(fs), r, readonly, size)
+			f, err = NewAnvil(0, 0, NewFs(fs), r, readonly, size)
 		}
 	}
 	return
@@ -48,7 +48,7 @@ func OpenFile(path string, readonly bool) (f *File, err error) {
 // NewAnvil reads an anvil file from the given ReadAtCloser.
 // This has the same limitations as [OpenFile] if `fs` is nil.
 // If fileSize is 0, no attempt is made to read any headers.
-func NewAnvil(rg Pos, fs *Fs, r io.ReaderAt, readonly bool, fileSize int64) (a *File, err error) {
+func NewAnvil(rgx, rgz int32, fs *Fs, r io.ReaderAt, readonly bool, fileSize int64) (a *File, err error) {
 	// check if the file size is 0 or a multiple of 4096
 	if fileSize&sectionSizeMask != 0 || (fileSize != 0 && fileSize < SectionSize*2) {
 		return nil, ErrSize
@@ -58,7 +58,7 @@ func NewAnvil(rg Pos, fs *Fs, r io.ReaderAt, readonly bool, fileSize int64) (a *
 		return nil, errors.New("anvil: invalid anvil.Fs provided")
 	}
 
-	anvil := &File{fs: fs, pos: rg, size: fileSize}
+	anvil := &File{fs: fs, pos: pos{x: rgx, z: rgz}, size: fileSize}
 
 	if closer, ok := r.(reader); ok {
 		anvil.read = closer

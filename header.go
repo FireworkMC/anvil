@@ -12,15 +12,12 @@ import (
 
 var headerPool = sync.Pool{New: func() interface{} { return &[Entries]Entry{} }}
 
-// Pos the position of a anvil file.
+// pos the position of a anvil file.
 // Normally the x and z values are the x and z values in the filename of the anvil file.
-type Pos struct{ x, z int32 }
+type pos struct{ x, z int32 }
 
 // External gets the x and z for an entry that is stored in a separate file.
-func (r *Pos) External(x, z uint8) (int32, int32) { return r.x<<5 | int32(x), r.z<<5 | int32(z) }
-
-// NewPos creates a new position.
-func NewPos(x, z int32) Pos { return Pos{x: x, z: z} }
+func (r *pos) External(x, z uint8) (int32, int32) { return r.x<<5 | int32(x), r.z<<5 | int32(z) }
 
 // sections returns the minimum number of sections to store the given number of bytes
 func sections(v uint) uint { return (v + sectionSizeMask) / SectionSize }

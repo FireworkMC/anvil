@@ -41,7 +41,7 @@ const (
 // Anvil a anvil file cache.
 type Anvil struct {
 	fs    *Fs
-	inUse map[Pos]*cachedFile
+	inUse map[pos]*cachedFile
 
 	lru     *simplelru.LRU
 	lruSize int
@@ -83,7 +83,7 @@ func (a *Anvil) File(rgX, rgZ int32) (f *CachedFile, err error) {
 
 // get gets the anvil get for the given coords
 func (a *Anvil) get(rgX, rgZ int32) (f *cachedFile, err error) {
-	rg := Pos{rgX, rgZ}
+	rg := pos{rgX, rgZ}
 	a.mux.RLock()
 	f, ok := a.getFile(rg)
 	a.mux.RUnlock()
@@ -101,7 +101,7 @@ func (a *Anvil) get(rgX, rgZ int32) (f *cachedFile, err error) {
 				var r reader
 				var size int64
 				if r, size, err = a.fs.open(rg.x, rg.z, a.readonly); err == nil {
-					file, err = NewAnvil(rg, a.fs, r, a.readonly, size)
+					file, err = NewAnvil(rg.x, rg.z, a.fs, r, a.readonly, size)
 				}
 			}
 
@@ -148,7 +148,7 @@ func (a *Anvil) free(f *cachedFile) (err error) {
 	return
 }
 
-func (a *Anvil) getFile(rg Pos) (f *cachedFile, ok bool) {
+func (a *Anvil) getFile(rg pos) (f *cachedFile, ok bool) {
 	f, ok = a.inUse[rg]
 	if ok {
 		f.useCount.Add(1)
@@ -172,7 +172,7 @@ func Open(path string, readonly bool, cacheSize int) (c *Anvil, err error) {
 
 // OpenFs opens the given directory.
 func OpenFs(fs *Fs, readonly bool, cacheSize int) (c *Anvil, err error) {
-	cache := Anvil{fs: fs, inUse: map[Pos]*cachedFile{}, lruSize: cacheSize, readonly: readonly}
+	cache := Anvil{fs: fs, inUse: map[pos]*cachedFile{}, lruSize: cacheSize, readonly: readonly}
 	if cache.lru, err = simplelru.NewLRU(cacheSize, nil); err == nil {
 		return &cache, nil
 	}
