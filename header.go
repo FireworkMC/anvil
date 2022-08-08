@@ -21,7 +21,7 @@ type pos struct{ x, z int32 }
 func (r *pos) External(x, z uint8) (int32, int32) { return r.x<<5 | int32(x), r.z<<5 | int32(z) }
 
 // sections returns the minimum number of sections to store the given number of bytes
-func sections(v uint) uint { return (v + sectionSizeMask) / SectionSize }
+func sections(v uint) uint { return (v + SectionSize - 1) / SectionSize }
 
 // Entry an entry in the anvil file
 type Entry struct {
@@ -67,59 +67,71 @@ func (h *Header) clear() { *h.entries = [Entries]Entry{}; h.used.ClearAll() }
 
 // Set updates the entry at x,z and the given marks the
 // space used by the given entry in the `used` bitset as used.
-func (h *Header) Set(x, z uint8, c Entry) {
+func (h *Header) Set(x, z uint8, c Entry) error {
 	if c.offset < 2 || c.offset+uint32(c.size) > MaxFileSections {
 		if c.offset == 0 && c.size == 0 {
-			h.Remove(x, z)
-			return
+			return h.Remove(x, z)
 		}
-		panic("invalid offset")
+		panic(fmt.Errorf("anvil/Header: invalid position (%d,%d)", x, z))
 	}
 
 	old := h.Get(x, z)
 	if old.Exists() {
 		h.freeSpace(old)
 	}
-	h.markSpace(c)
+
+	if err := h.markSpace(c); err != nil {
+		return err
+	}
+
 	*old = c
+	return nil
 }
 
 // Remove removes the given entry from the header and marks the space used
 // by the given entry in the `used` bitset as unused.
-func (h *Header) Remove(x, z uint8) {
+func (h *Header) Remove(x, z uint8) error {
 	e := h.Get(x, z)
-	h.freeSpace(e)
+
+	if err := h.freeSpace(e); err != nil {
+		return err
+	}
+
 	*e = Entry{}
+
+	return nil
 }
 
 // markSpace marks the space used by the given entry as used.
 // This panics if the entry overflows into used an area.
-func (h *Header) markSpace(c Entry) {
+func (h *Header) markSpace(c Entry) error {
 	for i := uint(0); i < uint(c.size); i++ {
 		pos := uint(c.offset) + i
 
 		if h.used.Test(pos) {
-			panic("anvil: Header: entry overflows into used space")
+			return fmt.Errorf("anvil: Header: entry overflows into used space")
 		}
 
 		h.used.Set(pos)
 	}
+	return nil
 }
 
 // freeSpace marks the space used by the entry as unused.
 // This panics if any area used by the entry is not marked as used.
-func (h *Header) freeSpace(c *Entry) {
+func (h *Header) freeSpace(c *Entry) error {
 	if c.offset == 0 || c.size == 0 {
-		return
+		return nil
 	}
 
 	for i := uint(0); i < uint(c.size); i++ {
 		pos := uint(c.offset) + i
 		if !h.used.Test(pos) {
-			panic("anvil: Header: inconsistent usage of space")
+			return fmt.Errorf("anvil: Header: inconsistent usage of space")
 		}
 		h.used.Clear(pos)
 	}
+	return nil
 }
 
 // FindSpace finds the next free space large enough to store `size` sections

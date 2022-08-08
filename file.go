@@ -212,12 +212,17 @@ func (a *File) Remove(x, z uint8) (err error) {
 	}
 
 	// check if the write is valid
-	if err = a.checkWrite(x, z); err == nil {
-		a.header.Remove(x, z)
-		// grow the file so that it has at least enough space to fit the header
-		if _, err = a.growFile(0); err == nil {
-			err = a.updateHeader(x, z, 0, 0)
-		}
+	if err = a.checkWrite(x, z); err != nil {
+		return
+	}
+
+	if err = a.header.Remove(x, z); err != nil {
+		return
+	}
+
+	// grow the file so that it has at least enough space to fit the header
+	if _, err = a.growFile(0); err == nil {
+		err = a.updateHeader(x, z, 0, 0)
 	}
 
 	return
@@ -336,7 +341,9 @@ func (a *File) updateHeader(x, z uint8, offset uint, size uint8) (err error) {
 		return errors.Wrap("anvil: unable to update header", err)
 	}
 
-	a.header.Set(x, z, entry)
+	if err = a.header.Set(x, z, entry); err != nil {
+		return
+	}
 
 	if err = a.writeUint32At(uint32(entry.timestamp), headerOffset+SectionSize); err != nil {
 		return errors.Wrap("anvil: unable to update timestamp", err)

@@ -25,7 +25,8 @@ func (*headerTest) TestSetRemove(is is.Is) {
 	for x := 0; x < 32; x++ {
 		for z := 0; z < 32; z++ {
 			size := uint8(x&0xF<<4 + z&0xF)
-			h.Set(uint8(x), uint8(z), Entry{offset: used, size: uint8(size)})
+			err := h.Set(uint8(x), uint8(z), Entry{offset: used, size: uint8(size)})
+			is(err == nil, "unexpected error returned by Header.Set")
 			used += uint32(size)
 			is(h.used.Count() == uint(used), "incorrect number of sections used")
 		}
@@ -35,9 +36,11 @@ func (*headerTest) TestSetRemove(is is.Is) {
 	for x := 0; x < 32; x++ {
 		for z := 0; z < 32; z++ {
 			size := uint8(x&0xF<<4 + z&0xF)
-			h.Remove(uint8(x), uint8(z))
+			err := h.Remove(uint8(x), uint8(z))
+			is(err == nil, "unexpected error returned by Header.Remove")
 			is(h.used.Count() == uint(used-uint32(size)), "incorrect number of sections used")
-			h.Set(uint8(x), uint8(z), Entry{offset: offset, size: size})
+			err = h.Set(uint8(x), uint8(z), Entry{offset: offset, size: size})
+			is(err == nil, "unexpected error returned by Header.Set")
 			offset += uint32(size)
 			is(h.used.Count() == uint(used), "incorrect number of sections used")
 		}
@@ -47,7 +50,8 @@ func (*headerTest) TestSetRemove(is is.Is) {
 	for x := 0; x < 32; x++ {
 		for z := 0; z < 32; z++ {
 			size := uint8(x&0xF<<4 + z&0xF)
-			h.Set(uint8(x), uint8(z), Entry{offset: offset, size: size})
+			err := h.Set(uint8(x), uint8(z), Entry{offset: offset, size: size})
+			is(err == nil, "unexpected error returned by Header.Set")
 			is(h.used.Count() == uint(used), "incorrect number of sections used")
 			offset += uint32(size)
 		}
