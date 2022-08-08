@@ -25,7 +25,7 @@ func (*headerTest) TestSetRemove(is is.Is) {
 	for x := 0; x < 32; x++ {
 		for z := 0; z < 32; z++ {
 			size := uint8(x&0xF<<4 + z&0xF)
-			h.Set(uint8(x), uint8(z), Entry{Offset: used, Size: uint8(size)})
+			h.Set(uint8(x), uint8(z), Entry{offset: used, size: uint8(size)})
 			used += uint32(size)
 			is(h.used.Count() == uint(used), "incorrect number of sections used")
 		}
@@ -37,7 +37,7 @@ func (*headerTest) TestSetRemove(is is.Is) {
 			size := uint8(x&0xF<<4 + z&0xF)
 			h.Remove(uint8(x), uint8(z))
 			is(h.used.Count() == uint(used-uint32(size)), "incorrect number of sections used")
-			h.Set(uint8(x), uint8(z), Entry{Offset: offset, Size: size})
+			h.Set(uint8(x), uint8(z), Entry{offset: offset, size: size})
 			offset += uint32(size)
 			is(h.used.Count() == uint(used), "incorrect number of sections used")
 		}
@@ -47,7 +47,7 @@ func (*headerTest) TestSetRemove(is is.Is) {
 	for x := 0; x < 32; x++ {
 		for z := 0; z < 32; z++ {
 			size := uint8(x&0xF<<4 + z&0xF)
-			h.Set(uint8(x), uint8(z), Entry{Offset: offset, Size: size})
+			h.Set(uint8(x), uint8(z), Entry{offset: offset, size: size})
 			is(h.used.Count() == uint(used), "incorrect number of sections used")
 			offset += uint32(size)
 		}
@@ -66,8 +66,8 @@ func (*headerTest) TestGet(is is.Is) {
 	for x := 0; x < 32; x++ {
 		for z := 0; z < 32; z++ {
 			v := uint32(x)<<16 | uint32(z)
-			header.Get(uint8(x), uint8(z)).Offset = v
-			actual[z*32+x] = Entry{Offset: v}
+			header.Get(uint8(x), uint8(z)).offset = v
+			actual[z*32+x] = Entry{offset: v}
 		}
 	}
 	is.Equal(header.entries[:], actual[:], "incorrect header modification")

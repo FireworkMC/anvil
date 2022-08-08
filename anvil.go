@@ -15,8 +15,8 @@ const (
 	// ErrExternal returned if the chunk is in an external file.
 	// This error is only returned if the anvil file was opened as a single file.
 	ErrExternal = errors.Const("anvil: chunk is in separate file")
-	// ErrNotGenerated returned if the chunk has not been generated yet.
-	ErrNotGenerated = errors.Const("anvil: chunk has not been generated")
+	// ErrNotExist returned if the entry does not exist.
+	ErrNotExist = errors.Const("anvil: entry does not exist")
 	// ErrSize returned if the size of the anvil file is not a multiple of 4096.
 	ErrSize = errors.Const("anvil: invalid file size")
 	// ErrCorrupted the given file contains invalid/corrupted data

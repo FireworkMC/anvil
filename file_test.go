@@ -68,7 +68,7 @@ func (f *fileTest) testFile(is is.Is, tfs afero.Fs) func(x, z int) {
 		is(err == nil, "unexpected error")
 		defer cache.free(f)
 
-		if errors.Is(fileErr, os.ErrNotExist) && errors.Is(cacheErr, ErrNotGenerated) {
+		if errors.Is(fileErr, os.ErrNotExist) && errors.Is(cacheErr, ErrNotExist) {
 			return
 		}
 

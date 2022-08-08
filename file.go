@@ -109,11 +109,11 @@ func (a *File) Read(x, z uint8, reader io.ReaderFrom) (n int64, err error) {
 
 	entry := a.header.Get(x, z)
 
-	if !entry.Generated() {
-		return 0, ErrNotGenerated
+	if !entry.Exists() {
+		return 0, ErrNotExist
 	}
 
-	offset := entry.OffsetBytes()
+	offset := entry.Offset() * SectionSize
 	var length int64
 	var method CompressMethod
 	var external bool
@@ -271,7 +271,7 @@ func (a *File) readerForEntry(x, z uint8, offset, length int64, external bool) (
 // readEntryHeader reads the header for the given entry.
 func (a *File) readEntryHeader(entry *Entry) (length int64, method CompressMethod, external bool, err error) {
 	header := [entryHeaderSize]byte{}
-	if _, err = a.read.ReadAt(header[:], entry.OffsetBytes()); err == nil {
+	if _, err = a.read.ReadAt(header[:], entry.Offset()*SectionSize); err == nil {
 		// the first 4 bytes in the header holds the length of the data as a big endian uint32
 		length = int64(binary.BigEndian.Uint32(header[:]))
 		// the top bit of the 5th byte of the header indicates if the entry is stored externally
@@ -282,7 +282,7 @@ func (a *File) readEntryHeader(entry *Entry) (length int64, method CompressMetho
 		// reduce the length by 1 since we already read the compression byte
 		length--
 
-		if length/SectionSize > int64(entry.Size) {
+		if length/SectionSize > int64(entry.size) {
 			return 0, 0, false, errors.CauseStr(ErrCorrupted, "chunk size mismatch")
 		}
 	}
@@ -330,7 +330,7 @@ func (a *File) updateHeader(x, z uint8, offset uint, size uint8) (err error) {
 	}
 
 	headerOffset := int64(x)<<2 | int64(z)<<7
-	entry := Entry{Offset: uint32(offset), Size: uint8(size), Timestamp: int32(time.Now().Unix())}
+	entry := Entry{offset: uint32(offset), size: uint8(size), timestamp: int32(time.Now().Unix())}
 
 	if err = a.writeUint32At(uint32(offset)<<8|uint32(size), headerOffset); err != nil {
 		return errors.Wrap("anvil: unable to update header", err)
@@ -338,7 +338,7 @@ func (a *File) updateHeader(x, z uint8, offset uint, size uint8) (err error) {
 
 	a.header.Set(x, z, entry)
 
-	if err = a.writeUint32At(uint32(entry.Timestamp), headerOffset+SectionSize); err != nil {
+	if err = a.writeUint32At(uint32(entry.timestamp), headerOffset+SectionSize); err != nil {
 		return errors.Wrap("anvil: unable to update timestamp", err)
 	}
 	return

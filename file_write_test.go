@@ -77,7 +77,7 @@ func TestWriteExternal(t *testing.T) {
 
 		_, err = c.Read(int32(i&0x1f), int32(i>>5), &bb)
 		if (int32(i&0x1f)+int32(i>>5))%2 == 1 {
-			is.Err(err, ErrNotGenerated, "unexpected state")
+			is.Err(err, ErrNotExist, "unexpected state")
 			continue
 		}
 
@@ -94,7 +94,7 @@ func TestWriteExternal(t *testing.T) {
 	for i, buf := range sections {
 		_, err = c.Read(int32(i&0x1f), int32(i>>5), &bb)
 		if (int32(i&0x1f)+int32(i>>5))%2 == 1 {
-			is.Err(err, ErrNotGenerated, "unexpected state")
+			is.Err(err, ErrNotExist, "unexpected state")
 			continue
 		}
 

@@ -4,6 +4,7 @@ import (
 	"fmt"
 	"io"
 	"sync"
+	"time"
 
 	"github.com/bits-and-blooms/bitset"
 	"github.com/yehan2002/errors"
@@ -24,22 +25,28 @@ func sections(v uint) uint { return (v + sectionSizeMask) / SectionSize }
 
 // Entry an entry in the anvil file
 type Entry struct {
-	// Size the number of sections used by this entry
-	// If this is zero the data has not been generated yet and is not stored in this file.
-	Size uint8
-	// Offset the offset of the chunk in the anvil file (in sections).
-	// The maximum offset is (2<<24)-1 sections.
-	Offset uint32
-	// Timestamp the Timestamp when the chunk was last modified.
-	// This is stored as the number of seconds since January 1, 1970 UTC.
-	Timestamp int32
+	size      uint8
+	offset    uint32
+	timestamp int32
 }
 
-// Generated returns if the entry is stored in this file.
-func (e *Entry) Generated() bool { return e.Offset != 0 && e.Size != 0 }
+// Exists returns if the entry is stored in this file.
+func (e *Entry) Exists() bool { return e.offset != 0 && e.size != 0 }
 
-// OffsetBytes returns the offset in bytes
-func (e *Entry) OffsetBytes() int64 { return int64(e.Offset) * SectionSize }
+// Modified returns when the entry was last modified.
+func (e *Entry) Modified() time.Time { return time.Unix(int64(e.timestamp), 0) }
+
+// CompressedSize the number of sections used by this entry (in sections).
+// To get the size in bytes, multiply this value by `SectionSize`.
+// If this is zero the data does not exist in this file.
+// If the entry is stored in an external file, this will return 1.
+func (e *Entry) CompressedSize() int64 { return int64(e.size) }
+
+// Offset is the offset of the entry in the anvil file (in sections).
+// The maximum offset is (2<<24)-1 sections.
+// To get the size in bytes, multiply this value by `SectionSize`.
+// If this is zero the data does not exist in this file.
+func (e *Entry) Offset() int64 { return int64(e.offset) }
 
 // Header the header of the anvil file.
 type Header struct {
@@ -61,8 +68,8 @@ func (h *Header) clear() { *h.entries = [Entries]Entry{}; h.used.ClearAll() }
 // Set updates the entry at x,z and the given marks the
 // space used by the given entry in the `used` bitset as used.
 func (h *Header) Set(x, z uint8, c Entry) {
-	if c.Offset < 2 || c.Offset+uint32(c.Size) > MaxFileSections {
-		if c.Offset == 0 && c.Size == 0 {
+	if c.offset < 2 || c.offset+uint32(c.size) > MaxFileSections {
+		if c.offset == 0 && c.size == 0 {
 			h.Remove(x, z)
 			return
 		}
@@ -70,7 +77,7 @@ func (h *Header) Set(x, z uint8, c Entry) {
 	}
 
 	old := h.Get(x, z)
-	if old.Generated() {
+	if old.Exists() {
 		h.freeSpace(old)
 	}
 	h.markSpace(c)
@@ -88,8 +95,8 @@ func (h *Header) Remove(x, z uint8) {
 // markSpace marks the space used by the given entry as used.
 // This panics if the entry overflows into used an area.
 func (h *Header) markSpace(c Entry) {
-	for i := uint(0); i < uint(c.Size); i++ {
-		pos := uint(c.Offset) + i
+	for i := uint(0); i < uint(c.size); i++ {
+		pos := uint(c.offset) + i
 
 		if h.used.Test(pos) {
 			panic("anvil: Header: entry overflows into used space")
@@ -102,12 +109,12 @@ func (h *Header) markSpace(c Entry) {
 // freeSpace marks the space used by the entry as unused.
 // This panics if any area used by the entry is not marked as used.
 func (h *Header) freeSpace(c *Entry) {
-	if c.Offset == 0 || c.Size == 0 {
+	if c.offset == 0 || c.size == 0 {
 		return
 	}
 
-	for i := uint(0); i < uint(c.Size); i++ {
-		pos := uint(c.Offset) + i
+	for i := uint(0); i < uint(c.size); i++ {
+		pos := uint(c.offset) + i
 		if !h.used.Test(pos) {
 			panic("anvil: Header: inconsistent usage of space")
 		}
@@ -171,7 +178,7 @@ func (h *Header) load(size, timestamps *[Entries]uint32, fileSections uint32) (e
 			h.used.Set(uint(pos))
 		}
 
-		h.entries[i] = Entry{Timestamp: int32(timestamps[i]), Size: uint8(size), Offset: offset}
+		h.entries[i] = Entry{timestamp: int32(timestamps[i]), size: uint8(size), offset: offset}
 	}
 	return
 }
@@ -180,8 +187,8 @@ func (h *Header) load(size, timestamps *[Entries]uint32, fileSections uint32) (e
 func (h *Header) Write(size, timestamps *[Entries]uint32) {
 	for i := 0; i < Entries; i++ {
 		entry := h.entries[i]
-		size[i] = entry.Offset<<8 | uint32(entry.Size)
-		timestamps[i] = uint32(entry.Timestamp)
+		size[i] = entry.offset<<8 | uint32(entry.size)
+		timestamps[i] = uint32(entry.timestamp)
 	}
 }
 
