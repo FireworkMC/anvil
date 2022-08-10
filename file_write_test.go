@@ -13,7 +13,7 @@ import (
 )
 
 func init() {
-	fs = afero.NewCopyOnWriteFs(afero.NewBasePathFs(&afero.OsFs{}, "./testdata"), &afero.MemMapFs{})
+	filesystem = afero.NewCopyOnWriteFs(afero.NewBasePathFs(&afero.OsFs{}, "./testdata"), &afero.MemMapFs{})
 }
 
 var compressionMethods = []CompressMethod{CompressionGzip, CompressionZlib, CompressionNone}
@@ -41,9 +41,9 @@ func TestWriteNewLarge(t *testing.T) {
 }
 
 func TestWriteExternal(t *testing.T) {
-	fs.MkdirAll("test-write-external", 0o777)
-	fs := afero.NewBasePathFs(fs, "test-write-external")
-	c, err := OpenFs(NewFs(fs), false, 10)
+	filesystem.MkdirAll("test-write-external", 0o777)
+	fs := afero.NewBasePathFs(filesystem, "test-write-external")
+	c, err := OpenFs(fs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -86,7 +86,7 @@ func TestWriteExternal(t *testing.T) {
 		bb.Reset()
 	}
 
-	c, err = OpenFs(NewFs(fs), false, 10)
+	c, err = OpenFs(fs)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -108,7 +108,7 @@ func testRoundtrip(is is.Is, cm CompressMethod, name string, sections [][]byte) 
 	name = fmt.Sprintf("%s-%s.mca", name, cm.String())
 	file := mem.NewFileHandle(mem.CreateFile(name))
 
-	f, err := NewAnvil(0, 0, nil, file, false, 0)
+	f, err := ReadAnvil(0, 0, file, 0, nil, Settings{})
 	is(err == nil, "unexpected error occurred while creating anvil file: %s", err)
 
 	f.CompressionMethod(cm)
@@ -129,7 +129,7 @@ func testRoundtrip(is is.Is, cm CompressMethod, name string, sections [][]byte) 
 		bb.Reset()
 	}
 
-	f, err = NewAnvil(0, 0, nil, file, false, file.Info().Size())
+	f, err = ReadAnvil(0, 0, file, file.Info().Size(), nil, Settings{})
 	is(err == nil, "unexpected error occurred while opening anvil file: %s", err)
 	for i, buf := range sections {
 		_, err = f.Read(uint8(i&0x1f), uint8(i>>5), &bb)

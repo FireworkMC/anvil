@@ -9,6 +9,7 @@ import (
 	"time"
 
 	"github.com/bits-and-blooms/bitset"
+	"github.com/spf13/afero"
 	"github.com/yehan2002/errors"
 )
 
@@ -19,7 +20,8 @@ type File struct {
 	header *Header
 
 	pos pos
-	fs  *Fs
+
+	settings Settings
 
 	size  int64
 	write writer
@@ -34,42 +36,45 @@ type File struct {
 // If any data is stored in external files, any attempt to read it will return ErrExternal.
 // If an attempt is made to write a data that is over 1MB after compression, ErrExternal will be returned.
 // To allow reading and writing to external files use [Open] instead.
-func OpenFile(path string, readonly bool) (f *File, err error) {
-	var r reader
+func OpenFile(path string, opt ...Settings) (f *File, err error) {
+	settings := getSettings(opt, filesystem)
+
+	var read reader
 	var size int64
 	if path, err = filepath.Abs(path); err == nil {
-		if r, size, err = openFile(fs, path, readonly); err == nil {
-			f, err = NewAnvil(0, 0, NewFs(fs), r, readonly, size)
+		if read, size, err = openFile(path, settings); err == nil {
+			f, err = newAnvil(0, 0, read, size, settings)
 		}
 	}
 	return
 }
 
-// NewAnvil reads an anvil file from the given ReadAtCloser.
+// ReadAnvil reads an anvil file from the given ReadAtCloser.
 // This has the same limitations as [OpenFile] if `fs` is nil.
 // If fileSize is 0, no attempt is made to read any headers.
-func NewAnvil(rgx, rgz int32, fs *Fs, r io.ReaderAt, readonly bool, fileSize int64) (a *File, err error) {
+func ReadAnvil(rgx, rgz int32, r io.ReaderAt, fileSize int64, fs afero.Fs, opt ...Settings) (a *File, err error) {
+	return newAnvil(rgx, rgz, r, fileSize, getSettings(opt, fs))
+}
+
+func newAnvil(rgx, rgz int32, r io.ReaderAt, fileSize int64, settings Settings) (a *File, err error) {
+
 	// check if the file size is 0 or a multiple of 4096
 	if fileSize&sectionSizeMask != 0 || (fileSize != 0 && fileSize < SectionSize*2) {
 		return nil, ErrSize
 	}
 
-	if fs != nil && fs.fs == nil {
-		return nil, errors.New("anvil: invalid anvil.Fs provided")
-	}
-
-	anvil := &File{fs: fs, pos: pos{x: rgx, z: rgz}, size: fileSize}
+	anvil := &File{settings: settings, pos: pos{x: rgx, z: rgz}, size: fileSize}
 
 	if closer, ok := r.(reader); ok {
 		anvil.read = closer
 	} else {
-		if !readonly {
+		if !settings.ReadOnly {
 			return nil, errors.Error("anvil: ReadFile: `r` must implement io.Closer to be opened in write mode")
 		}
 		anvil.read = &readAtCloser{ReaderAt: r}
 	}
 
-	if !readonly {
+	if !settings.ReadOnly {
 		var canWrite bool
 		anvil.write, canWrite = r.(writer)
 		if !canWrite {
@@ -166,13 +171,21 @@ func (a *File) Write(x, z uint8, b []byte) (err error) {
 	size := sections(uint(buf.Len()))
 
 	if size > 255 {
-		if a.fs == nil {
+		if a.settings.fs == nil {
 			return ErrExternal
 		}
 
 		cx, cz := a.pos.External(x, z)
-		if err = a.fs.writeExternal(cx, cz, buf); err != nil {
-			return
+
+		var f afero.File
+
+		filename := fmt.Sprintf(a.settings.ChunkFmt, cx, cz)
+		if f, err = a.settings.fs.Create(filename); err != nil {
+			return errors.Wrap("anvil: unable to create external file", err)
+		}
+
+		if err = buf.WriteTo(f, false); err != nil {
+			return errors.Wrap("anvil: unable to write external file", err)
 		}
 
 		method := buf.compress
@@ -267,8 +280,14 @@ func (a *File) Close() (err error) {
 func (a *File) readerForEntry(x, z uint8, offset, length int64, external bool) (src io.ReadCloser, err error) {
 	if !external {
 		return io.NopCloser(io.NewSectionReader(a.read, offset+entryHeaderSize, length)), nil
-	} else if a.fs != nil {
-		return a.fs.readExternal(a.pos.External(x, z))
+	} else if a.settings.fs != nil {
+		entryX, entryZ := a.pos.External(x, z)
+		filename := fmt.Sprintf(a.settings.ChunkFmt, entryX, entryZ)
+
+		if src, err = a.settings.fs.Open(filename); err != nil {
+			return nil, errors.Wrap("anvil: unable to open external file", err)
+		}
+		return
 	}
 	return nil, ErrExternal
 }
@@ -307,7 +326,7 @@ func (a *File) checkWrite(x, z uint8) error {
 	}
 
 	if a.write == nil {
-		return fmt.Errorf("anvil: file is opened in read-only mode")
+		return ErrReadOnly
 	}
 
 	return nil

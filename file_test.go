@@ -56,7 +56,7 @@ func (f *fileTest) TestMultpleFiles(is is.Is) {
 }
 
 func (f *fileTest) testFile(is is.Is, tfs afero.Fs) func(x, z int) {
-	cache, err := OpenFs(NewFs(tfs), true, 5)
+	cache, err := OpenFs(tfs, Settings{ReadOnly: true, CacheSize: 5})
 	is(err == nil, "unexpected error while opening")
 
 	return func(x, z int) {
@@ -84,7 +84,7 @@ func (f *fileTest) testFile(is is.Is, tfs afero.Fs) func(x, z int) {
 }
 
 func readTestData(is is.Is, name string) afero.Fs {
-	f, err := fs.Open(name)
+	f, err := filesystem.Open(name)
 	is(err == nil, "unexpected error while reading test data: %s", err)
 	defer f.Close()
 
