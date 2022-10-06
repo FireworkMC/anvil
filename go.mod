@@ -8,7 +8,7 @@ require (
 	github.com/klauspost/compress v1.15.11
 	github.com/spf13/afero v1.9.2
 	github.com/yehan2002/errors v1.4.0
-	github.com/yehan2002/fastbytes/v2 v2.0.5
+	github.com/yehan2002/fastbytes/v2 v2.0.6
 	github.com/yehan2002/is/v2 v2.2.3
 )
 
