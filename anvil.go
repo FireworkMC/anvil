@@ -18,7 +18,7 @@ const (
 	ErrExternal = errors.Const("anvil: entry is in separate file")
 	// ErrNotExist returned if the entry does not exist.
 	ErrNotExist = errors.Const("anvil: entry does not exist")
-	// ErrSize returned if the size of the anvil file is not a multiple of 4096.
+	// ErrSize returned if the size of the anvil file is not a multiple of [SectionSize].
 	ErrSize = errors.Const("anvil: invalid file size")
 	// ErrCorrupted the given file contains invalid/corrupted data
 	ErrCorrupted = errors.Const("anvil: corrupted file")
@@ -73,7 +73,7 @@ var defaultSettings = Settings{
 
 // Anvil a anvil file cache.
 type Anvil struct {
-	inUse map[pos]*cachedFile
+	inUse map[pos]*file
 
 	lru *lru.LRU
 
@@ -84,7 +84,7 @@ type Anvil struct {
 
 // Read reads the chunk data for the given location
 func (a *Anvil) Read(entryX, entryZ int32, read io.ReaderFrom) (n int64, err error) {
-	var f *cachedFile
+	var f *file
 	if f, err = a.get(entryX>>5, entryZ>>5); err == nil {
 		defer a.free(f)
 		n, err = f.Read(uint8(entryX&0x1f), uint8(entryZ&0x1f), read)
@@ -94,7 +94,7 @@ func (a *Anvil) Read(entryX, entryZ int32, read io.ReaderFrom) (n int64, err err
 
 // Write writes the chunk data for the given location
 func (a *Anvil) Write(entryX, entryZ int32, p []byte) (err error) {
-	var f *cachedFile
+	var f *file
 	if f, err = a.get(entryX>>5, entryZ>>5); err == nil {
 		defer a.free(f)
 		err = f.Write(uint8(entryX&0x1f), uint8(entryZ&0x1f), p)
@@ -104,16 +104,16 @@ func (a *Anvil) Write(entryX, entryZ int32, p []byte) (err error) {
 
 // File opens the anvil file at rgX, rgZ.
 // Callers must close the returned file for it to be removed from the cache.
-func (a *Anvil) File(rgX, rgZ int32) (f *CachedFile, err error) {
+func (a *Anvil) File(rgX, rgZ int32) (f File, err error) {
 	c, err := a.get(rgX, rgZ)
 	if err != nil {
 		return nil, err
 	}
-	return &CachedFile{cachedFile: c}, nil
+	return &cachedFile{file: c}, nil
 }
 
 // get gets the anvil get for the given coords
-func (a *Anvil) get(rgX, rgZ int32) (f *cachedFile, err error) {
+func (a *Anvil) get(rgX, rgZ int32) (f *file, err error) {
 	rg := pos{rgX, rgZ}
 	a.mux.RLock()
 	f, ok := a.getFile(rg)
@@ -124,28 +124,27 @@ func (a *Anvil) get(rgX, rgZ int32) (f *cachedFile, err error) {
 		defer a.mux.Unlock()
 		// check if the file was opened while we were waiting for the mux
 		if f, ok = a.getFile(rg); !ok {
-			var file *File
 
 			if a.lru != nil {
 				// check if the file is in the lru cache
 				if v, ok := a.lru.Get(rg); ok {
 					a.lru.Remove(rg)
-					file = v.(*File)
+					f = v.(*file)
 				}
 			}
 
 			// file wasn't in the cache. read file from the disk
-			if file == nil {
+			if f == nil {
 				var r reader
 				var size int64
 				filename := fmt.Sprintf(a.settings.AnvilFmt, rg.x, rg.z)
 				if r, size, err = openFile(filename, a.settings); err == nil {
-					file, err = newAnvil(rg.x, rg.z, r, size, a.settings)
+					f, err = newAnvil(rg.x, rg.z, r, size, a.settings)
+					f.cache = a
 				}
 			}
 
 			if err == nil {
-				f = &cachedFile{File: file, cache: a}
 				f.useCount.Add(1)
 				a.inUse[rg] = f
 			}
@@ -155,7 +154,7 @@ func (a *Anvil) get(rgX, rgZ int32) (f *cachedFile, err error) {
 	return
 }
 
-func (a *Anvil) free(f *cachedFile) (err error) {
+func (a *Anvil) free(f *file) (err error) {
 	a.mux.RLock()
 	newCount := f.useCount.Add(-1)
 	a.mux.RUnlock()
@@ -168,7 +167,7 @@ func (a *Anvil) free(f *cachedFile) (err error) {
 			if a.lru == nil {
 				// cache is disabled. close the file
 				delete(a.inUse, f.pos)
-				return f.File.Close()
+				return f.Close()
 			}
 
 			// evict the oldest file from the lru if adding a new element will cause a element to be evicted
@@ -176,13 +175,13 @@ func (a *Anvil) free(f *cachedFile) (err error) {
 			// We cannot use EvictCallback since there is no way to handle error that occur while closing the file.
 			if a.lru.Len() == a.settings.CacheSize {
 				if _, old, ok := a.lru.RemoveOldest(); ok {
-					if err = old.(*File).Close(); err != nil {
+					if err = old.(*file).Close(); err != nil {
 						err = errors.Wrap("anvil.Cache: error occurred while evicting file", err)
 					}
 				}
 			}
 
-			evicted := a.lru.Add(f.pos, f.File)
+			evicted := a.lru.Add(f.pos, f)
 			if evicted {
 				// This should never happen since we manually evicted the oldest element
 				panic("anvil.Cache: File was incorrectly evicted")
@@ -194,7 +193,7 @@ func (a *Anvil) free(f *cachedFile) (err error) {
 	return
 }
 
-func (a *Anvil) getFile(rg pos) (f *cachedFile, ok bool) {
+func (a *Anvil) getFile(rg pos) (f *file, ok bool) {
 	f, ok = a.inUse[rg]
 	if ok {
 		f.useCount.Add(1)
@@ -220,7 +219,7 @@ func Open(path string, opt ...Settings) (c *Anvil, err error) {
 func OpenFs(fs afero.Fs, opt ...Settings) (c *Anvil, err error) {
 	settings := getSettings(opt, fs)
 
-	cache := Anvil{inUse: map[pos]*cachedFile{}, settings: settings}
+	cache := Anvil{inUse: map[pos]*file{}, settings: settings}
 
 	if settings.CacheSize > 0 {
 		if cache.lru, err = lru.NewLRU(settings.CacheSize, nil); err != nil {

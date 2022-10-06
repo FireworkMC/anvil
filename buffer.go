@@ -75,7 +75,6 @@ func (b *buffer) WriteAt(w io.WriterAt, off int64, header bool) error {
 		buf := b.buf[i][startOffset:]
 
 		if i == len(b.buf)-1 {
-			// TODO: check if this works properly
 			buf = b.buf[i][startOffset : (b.length-int64(startOffset))&sectionSizeMask]
 		}
 
@@ -90,7 +89,7 @@ func (b *buffer) WriteAt(w io.WriterAt, off int64, header bool) error {
 	return nil
 }
 
-// WriteTo same as `WriteAt` but writes to the start of the given writer
+// WriteTo same as [WriteAt] but writes to the start of the given writer
 func (b *buffer) WriteTo(w io.Writer, header bool) (err error) {
 	return b.WriteAt(&writeAtWrapper{Writer: w}, -1, header)
 }

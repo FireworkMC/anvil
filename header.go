@@ -37,14 +37,14 @@ func (e *Entry) Exists() bool { return e.offset != 0 && e.size != 0 }
 func (e *Entry) Modified() time.Time { return time.Unix(int64(e.timestamp), 0) }
 
 // CompressedSize the number of sections used by this entry (in sections).
-// To get the size in bytes, multiply this value by `SectionSize`.
+// To get the size in bytes, multiply this value by [SectionSize].
 // If this is zero the data does not exist in this file.
 // If the entry is stored in an external file, this will return 1.
 func (e *Entry) CompressedSize() int64 { return int64(e.size) }
 
 // Offset is the offset of the entry in the anvil file (in sections).
 // The maximum offset is (2<<24)-1 sections.
-// To get the size in bytes, multiply this value by `SectionSize`.
+// To get the size in bytes, multiply this value by [SectionSize].
 // If this is zero the data does not exist in this file.
 func (e *Entry) Offset() int64 { return int64(e.offset) }
 
@@ -164,7 +164,7 @@ func (h *Header) FindSpace(size uint) (offset uint, found bool) {
 func (h *Header) Free() { headerPool.Put(h.entries) }
 
 // load reads the header from the given arrays.
-// See comment on `LoadHeader`.
+// See comment on [Header.LoadHeader].
 func (h *Header) load(size, timestamps *[Entries]uint32, fileSections uint32) (err error) {
 	if fileSections == 0 {
 		fileSections = MaxFileSections

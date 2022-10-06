@@ -8,6 +8,8 @@ import (
 	"sync"
 	"time"
 
+	"sync/atomic"
+
 	"github.com/bits-and-blooms/bitset"
 	"github.com/spf13/afero"
 	"github.com/yehan2002/errors"
@@ -15,7 +17,32 @@ import (
 
 // File is a single anvil file.
 // All functions can be called concurrently from multiple goroutines.
-type File struct {
+type File interface {
+	// Read reads the entry at x,z to the given `reader`.
+	// `reader` must not retain the [io.Reader] passed to it.
+	// `reader` must not return before reading has completed.
+	Read(x, z uint8, reader io.ReaderFrom) (n int64, err error)
+
+	// Write updates the data for the entry at x,z to the given buffer.
+	// The given buffer is compressed and written to the anvil file.
+	// The compression method used can be changed using the [CompressMethod] method.
+	// If the data is larger than 1MB after compression, the data is stored externally.
+	// Calling this function with an empty buffer is the equivalent of calling [File.Remove](x,z).
+	Write(x, z uint8, b []byte) (err error)
+
+	// Remove removes the given entry from the file.
+	Remove(x, z uint8) (err error)
+
+	// CompressionMethod sets the compression method to be used by the writer.
+	CompressionMethod(m CompressMethod) (err error)
+
+	// Close closes the anvil file.
+	Close() (err error)
+}
+
+// file is a single anvil file.
+// All functions can be called concurrently from multiple goroutines.
+type file struct {
 	mux    sync.RWMutex
 	header *Header
 
@@ -29,14 +56,22 @@ type File struct {
 
 	c  compressor
 	cm CompressMethod
+
+	// This is nil unless this was opened by Anvil
+	cache *Anvil
+
+	// useCount the number of users for this file
+	// This should only be modified while holding read or write lock of `cache`.
+	// This is unused if `cache` is nil
+	useCount atomic.Int32
 }
 
 // OpenFile opens the given anvil file.
 // If readonly is set any attempts to modify the file will return an error.
-// If any data is stored in external files, any attempt to read it will return ErrExternal.
-// If an attempt is made to write a data that is over 1MB after compression, ErrExternal will be returned.
+// If any data is stored in external files, any attempt to read it will return [ErrExternal].
+// If an attempt is made to write a data that is over 1MB after compression, [ErrExternal] will be returned.
 // To allow reading and writing to external files use [Open] instead.
-func OpenFile(path string, opt ...Settings) (f *File, err error) {
+func OpenFile(path string, opt ...Settings) (f File, err error) {
 	settings := getSettings(opt, filesystem)
 
 	var read reader
@@ -52,18 +87,18 @@ func OpenFile(path string, opt ...Settings) (f *File, err error) {
 // ReadAnvil reads an anvil file from the given ReadAtCloser.
 // This has the same limitations as [OpenFile] if `fs` is nil.
 // If fileSize is 0, no attempt is made to read any headers.
-func ReadAnvil(rgx, rgz int32, r io.ReaderAt, fileSize int64, fs afero.Fs, opt ...Settings) (a *File, err error) {
+func ReadAnvil(rgx, rgz int32, r io.ReaderAt, fileSize int64, fs afero.Fs, opt ...Settings) (a File, err error) {
 	return newAnvil(rgx, rgz, r, fileSize, getSettings(opt, fs))
 }
 
-func newAnvil(rgx, rgz int32, r io.ReaderAt, fileSize int64, settings Settings) (a *File, err error) {
+func newAnvil(rgx, rgz int32, r io.ReaderAt, fileSize int64, settings Settings) (a *file, err error) {
 
 	// check if the file size is 0 or a multiple of 4096
 	if fileSize&sectionSizeMask != 0 || (fileSize != 0 && fileSize < SectionSize*2) {
 		return nil, ErrSize
 	}
 
-	anvil := &File{settings: settings, pos: pos{x: rgx, z: rgz}, size: fileSize}
+	anvil := &file{settings: settings, pos: pos{x: rgx, z: rgz}, size: fileSize}
 
 	if closer, ok := r.(reader); ok {
 		anvil.read = closer
@@ -100,7 +135,7 @@ func newAnvil(rgx, rgz int32, r io.ReaderAt, fileSize int64, settings Settings) 
 // Read reads the entry at x,z to the given `reader`.
 // `reader` must not retain the [io.Reader] passed to it.
 // `reader` must not return before reading has completed.
-func (a *File) Read(x, z uint8, reader io.ReaderFrom) (n int64, err error) {
+func (a *file) Read(x, z uint8, reader io.ReaderFrom) (n int64, err error) {
 	if x > 31 || z > 31 {
 		return 0, fmt.Errorf("anvil: invalid chunk position")
 	}
@@ -144,7 +179,7 @@ func (a *File) Read(x, z uint8, reader io.ReaderFrom) (n int64, err error) {
 // The compression method used can be changed using the [CompressMethod] method.
 // If the data is larger than 1MB after compression, the data is stored externally.
 // Calling this function with an empty buffer is the equivalent of calling `Remove(x,z)`.
-func (a *File) Write(x, z uint8, b []byte) (err error) {
+func (a *file) Write(x, z uint8, b []byte) (err error) {
 	if len(b) == 0 {
 		return a.Remove(x, z)
 	}
@@ -152,11 +187,7 @@ func (a *File) Write(x, z uint8, b []byte) (err error) {
 	a.mux.Lock()
 	defer a.mux.Unlock()
 
-	if a.header == nil {
-		return nil
-	}
-
-	// check if the write is valid
+	// check if the write is valid and if the file is open
 	if err = a.checkWrite(x, z); err != nil {
 		return err
 	}
@@ -216,15 +247,11 @@ func (a *File) Write(x, z uint8, b []byte) (err error) {
 }
 
 // Remove removes the given entry from the file.
-func (a *File) Remove(x, z uint8) (err error) {
+func (a *file) Remove(x, z uint8) (err error) {
 	a.mux.Lock()
 	defer a.mux.Unlock()
 
-	if a.header == nil {
-		return ErrClosed
-	}
-
-	// check if the write is valid
+	// check if the write is valid and if the file is open
 	if err = a.checkWrite(x, z); err != nil {
 		return
 	}
@@ -242,7 +269,7 @@ func (a *File) Remove(x, z uint8) (err error) {
 }
 
 // CompressionMethod sets the compression method to be used by the writer.
-func (a *File) CompressionMethod(m CompressMethod) (err error) {
+func (a *file) CompressionMethod(m CompressMethod) (err error) {
 	a.mux.Lock()
 	defer a.mux.Unlock()
 
@@ -258,7 +285,7 @@ func (a *File) CompressionMethod(m CompressMethod) (err error) {
 }
 
 // Close closes the anvil file.
-func (a *File) Close() (err error) {
+func (a *file) Close() (err error) {
 	a.mux.Lock()
 	defer a.mux.Unlock()
 	if a.header != nil {
@@ -277,7 +304,7 @@ func (a *File) Close() (err error) {
 
 // readerForEntry returns a reader that reads the given entry.
 // The reader is only valid until the next call to `Write`
-func (a *File) readerForEntry(x, z uint8, offset, length int64, external bool) (src io.ReadCloser, err error) {
+func (a *file) readerForEntry(x, z uint8, offset, length int64, external bool) (src io.ReadCloser, err error) {
 	if !external {
 		return io.NopCloser(io.NewSectionReader(a.read, offset+entryHeaderSize, length)), nil
 	} else if a.settings.fs != nil {
@@ -293,7 +320,7 @@ func (a *File) readerForEntry(x, z uint8, offset, length int64, external bool) (
 }
 
 // readEntryHeader reads the header for the given entry.
-func (a *File) readEntryHeader(entry *Entry) (length int64, method CompressMethod, external bool, err error) {
+func (a *file) readEntryHeader(entry *Entry) (length int64, method CompressMethod, external bool, err error) {
 	header := [entryHeaderSize]byte{}
 	if _, err = a.read.ReadAt(header[:], entry.Offset()*SectionSize); err == nil {
 		// the first 4 bytes in the header holds the length of the data as a big endian uint32
@@ -316,7 +343,7 @@ func (a *File) readEntryHeader(entry *Entry) (length int64, method CompressMetho
 // checkWrite checks if the write is valid.
 // This checks if x,z are within bounds
 // and if the file was opened for writing and has not been closed.
-func (a *File) checkWrite(x, z uint8) error {
+func (a *file) checkWrite(x, z uint8) error {
 	if x > 31 || z > 31 {
 		return fmt.Errorf("anvil: invalid entry position")
 	}
@@ -333,7 +360,7 @@ func (a *File) checkWrite(x, z uint8) error {
 }
 
 // growFile grows the file to fit `size` more sections.
-func (a *File) growFile(size uint) (offset uint, err error) {
+func (a *file) growFile(size uint) (offset uint, err error) {
 	fileSize := a.size
 
 	// make space for the header if the file does not have one.
@@ -348,7 +375,7 @@ func (a *File) growFile(size uint) (offset uint, err error) {
 }
 
 // updateHeader updates the offset, size and timestamp in the main header for the entry at x,z.
-func (a *File) updateHeader(x, z uint8, offset uint, size uint8) (err error) {
+func (a *file) updateHeader(x, z uint8, offset uint, size uint8) (err error) {
 	if x > 31 || z > 31 {
 		panic("invalid position")
 	}
@@ -372,7 +399,7 @@ func (a *File) updateHeader(x, z uint8, offset uint, size uint8) (err error) {
 
 // writeUint32 writes the given uint32 at the given position
 // and syncs the changes to disk.
-func (a *File) writeUint32At(v uint32, offset int64) (err error) {
+func (a *file) writeUint32At(v uint32, offset int64) (err error) {
 	var tmp [4]byte
 	binary.BigEndian.PutUint32(tmp[:], v)
 	if _, err = a.write.WriteAt(tmp[:], offset); err == nil {
@@ -383,7 +410,7 @@ func (a *File) writeUint32At(v uint32, offset int64) (err error) {
 }
 
 // compress compresses the given byte slice and writes it to a buffer.
-func (a *File) compress(b []byte) (buf *buffer, err error) {
+func (a *file) compress(b []byte) (buf *buffer, err error) {
 	if a.cm == 0 || a.c == nil {
 		a.cm = DefaultCompression
 		if a.c, err = a.cm.compressor(); err != nil {

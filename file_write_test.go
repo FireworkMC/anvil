@@ -106,9 +106,9 @@ func TestWriteExternal(t *testing.T) {
 
 func testRoundtrip(is is.Is, cm CompressMethod, name string, sections [][]byte) {
 	name = fmt.Sprintf("%s-%s.mca", name, cm.String())
-	file := mem.NewFileHandle(mem.CreateFile(name))
+	memFile := mem.NewFileHandle(mem.CreateFile(name))
 
-	f, err := ReadAnvil(0, 0, file, 0, nil, Settings{})
+	f, err := ReadAnvil(0, 0, memFile, 0, nil, Settings{})
 	is(err == nil, "unexpected error occurred while creating anvil file: %s", err)
 
 	f.CompressionMethod(cm)
@@ -118,7 +118,7 @@ func testRoundtrip(is is.Is, cm CompressMethod, name string, sections [][]byte) 
 	for i, buf := range sections {
 		f.Write(uint8(i&0x1f), uint8(i>>5), buf)
 
-		n, err := f.write.(io.Seeker).Seek(0, io.SeekEnd)
+		n, err := f.(*file).write.(io.Seeker).Seek(0, io.SeekEnd)
 		is(err == nil, "unexpected error")
 		is(n&sectionSizeMask == 0, "file size is not a multiple of `sectionSize`: %d", n)
 
@@ -129,7 +129,7 @@ func testRoundtrip(is is.Is, cm CompressMethod, name string, sections [][]byte) 
 		bb.Reset()
 	}
 
-	f, err = ReadAnvil(0, 0, file, file.Info().Size(), nil, Settings{})
+	f, err = ReadAnvil(0, 0, memFile, memFile.Info().Size(), nil, Settings{})
 	is(err == nil, "unexpected error occurred while opening anvil file: %s", err)
 	for i, buf := range sections {
 		_, err = f.Read(uint8(i&0x1f), uint8(i>>5), &bb)
