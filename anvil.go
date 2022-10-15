@@ -56,7 +56,10 @@ type Settings struct {
 	// Default: 20
 	CacheSize int
 
+	// The formatting string to be used to generate the file name for an anvil file
 	AnvilFmt string
+	// The formatting string to be used to generate the file name for a chunk that is stored
+	// separately from and anvil file.
 	ChunkFmt string
 
 	fs afero.Fs
@@ -82,7 +85,7 @@ type Anvil struct {
 	mux sync.RWMutex
 }
 
-// Read reads the chunk data for the given location
+// Read reads the chunk data for the given location.
 func (a *Anvil) Read(entryX, entryZ int32, read io.ReaderFrom) (n int64, err error) {
 	var f *file
 	if f, err = a.get(entryX>>5, entryZ>>5); err == nil {
