@@ -1,5 +1,7 @@
 # anvil
 
+[![Go](https://github.com/FireworkMC/anvil/actions/workflows/go.yml/badge.svg)](https://github.com/FireworkMC/anvil/actions/workflows/go.yml)[![Go Report Card](https://goreportcard.com/badge/github.com/FireworkMC/anvil)](https://goreportcard.com/report/github.com/FireworkMC/anvil)[![Go Reference](https://pkg.go.dev/badge/github.com/FireworkMC/anvil.svg)](https://pkg.go.dev/github.com/FireworkMC/anvil)
+
 anvil is a simple library for reading and writing minecraft [anvil](https://minecraft.fandom.com/wiki/Anvil_file_format) files.
 
 ## Installation
