@@ -12,7 +12,7 @@ go get github.com/FireworkMC/anvil
 
 ## Usage
 
-### Reading and writing chunk data from a directory containing anvil files
+### Reading and writing data from a directory containing anvil files
 
 ```go
 a, err := anvil.Open("/path/to/anvil/dir")
@@ -28,12 +28,14 @@ _, err = a.Read(chunkX, chunkZ, &buffer)
 
 err = a.Write(chunkX, chunkZ, buffer.Bytes())
 
+err = a.Close()
+
 ```
 
 The `anvil.Anvil` returned by `Open` contains a cache of opened anvil files.
 It is recommended to use `Open` instead of `OpenFile` since opening anvil files is an expensive operation.
 
-### Reading and writing chunk data from a single anvil file
+### Reading and writing data from a single anvil file
 
 ```go
 f, err := anvil.OpenFile("/path/to/anvil/file")
