@@ -145,8 +145,8 @@ github.com/yehan2002/errors v1.4.0 h1:VyzmnMkrrP/qWSZx6m5nes12BQdoEZ+NRoeLsVslPe
 github.com/yehan2002/errors v1.4.0/go.mod h1:vd/cZvWo6tzv1v1UdN1akENX8CeaZd4nkqzKHt8LwEo=
 github.com/yehan2002/fastbytes/v2 v2.0.6 h1:LwKz0VVK8z31EF/BXd1GP10NDdqXljY6TvnXAp9BLJw=
 github.com/yehan2002/fastbytes/v2 v2.0.6/go.mod h1:XyRAkxJoMZp6U2ZwSScJZKjDaFhvZEGJtYAPWO5WrgI=
-github.com/yehan2002/is/v2 v2.2.3 h1:mu6sPOMBGDfznkjaPqiJWEglZySChsQBaSOq3go6uxw=
-github.com/yehan2002/is/v2 v2.2.3/go.mod h1:vzFI2yrwm9IijztPzTS01u7PfFOTK97A7/2s7Tk0A+w=
+github.com/yehan2002/is/v2 v2.2.4 h1:KrwsXWP0dAqcKjqwtEnjDdrKmzlQ1U10TO3kS13WXWc=
+github.com/yehan2002/is/v2 v2.2.4/go.mod h1:vzFI2yrwm9IijztPzTS01u7PfFOTK97A7/2s7Tk0A+w=
 github.com/yuin/goldmark v1.1.25/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.1.27/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
 github.com/yuin/goldmark v1.1.32/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
