@@ -77,3 +77,13 @@ func (c *cachedFile) CompressionMethod(m CompressMethod) (err error) {
 
 	return c.file.CompressionMethod(m)
 }
+
+// Info gets information stored in the anvil header for the given entry.
+func (c *cachedFile) Info(x, z uint8) (entry Entry, exists bool) {
+	c.closeMux.RLock()
+	defer c.closeMux.RUnlock()
+	if c.closed {
+		return
+	}
+	return c.file.Info(x, z)
+}

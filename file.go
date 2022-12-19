@@ -36,6 +36,9 @@ type File interface {
 	// CompressionMethod sets the compression method to be used by the writer.
 	CompressionMethod(m CompressMethod) (err error)
 
+	// Info gets information stored in the anvil header for the given entry.
+	Info(x, z uint8) (entry Entry, exists bool)
+
 	// Close closes the anvil file.
 	Close() (err error)
 }
@@ -282,6 +285,16 @@ func (a *file) CompressionMethod(m CompressMethod) (err error) {
 		a.cm, a.c = m, c
 	}
 	return
+}
+
+// Info gets information stored in the anvil header for the given entry.
+func (a *file) Info(x, z uint8) (entry Entry, exists bool) {
+	if x > 31 || z > 31 {
+		return
+	}
+
+	entry = *a.header.Get(x, z)
+	return entry, entry.Exists()
 }
 
 // Close closes the anvil file.

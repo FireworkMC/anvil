@@ -105,6 +105,16 @@ func (a *Anvil) Write(entryX, entryZ int32, p []byte) (err error) {
 	return
 }
 
+// Info gets information stored in the anvil header for the given entry.
+func (a *Anvil) Info(entryX, entryZ int32) (entry Entry, exists bool, err error) {
+	var f *file
+	if f, err = a.get(entryX>>5, entryZ>>5); err == nil {
+		defer a.free(f)
+		entry, exists = f.Info(uint8(entryX&0x1f), uint8(entryZ&0x1f))
+	}
+	return
+}
+
 // File opens the anvil file at rgX, rgZ.
 // Callers must close the returned file for it to be removed from the cache.
 func (a *Anvil) File(rgX, rgZ int32) (f File, err error) {
