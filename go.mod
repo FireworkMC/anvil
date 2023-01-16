@@ -7,7 +7,7 @@ require (
 	github.com/hashicorp/golang-lru v0.5.4
 	github.com/klauspost/compress v1.15.14
 	github.com/spf13/afero v1.9.3
-	github.com/yehan2002/errors v1.5.2
+	github.com/yehan2002/errors v1.5.3
 	github.com/yehan2002/fastbytes/v2 v2.0.6
 	github.com/yehan2002/is/v2 v2.2.4
 )
