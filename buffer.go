@@ -21,7 +21,10 @@ type buffer struct {
 
 // Write appends data to this buffer.
 // This never returns an error.
-func (b *buffer) Write(p []byte) (n int, err error) {
+func (b *buffer) Write(p []byte) (n int, err error) { return b.AppendBytes(p), nil }
+
+// AppendBytes appends the given byte slice to the buffer.
+func (b *buffer) AppendBytes(p []byte) (n int) {
 	if b.buf == nil {
 		b.grow()
 		// reserve space for the header
@@ -43,7 +46,7 @@ func (b *buffer) Write(p []byte) (n int, err error) {
 	}
 
 	b.length += int64(n)
-	return n, nil
+	return n
 }
 
 // CompressMethod sets the compression method used by the data in the buffer.
@@ -94,8 +97,8 @@ func (b *buffer) WriteTo(w io.Writer, header bool) (err error) {
 	return b.WriteAt(&writeAtWrapper{Writer: w}, -1, header)
 }
 
-// Free frees the buffer for reuse.
-func (b *buffer) Free() {
+// Reset frees the buffer for reuse.
+func (b *buffer) Reset() {
 	for _, s := range b.buf {
 		s.Free()
 	}

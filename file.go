@@ -200,7 +200,7 @@ func (a *file) Write(x, z uint8, b []byte) (err error) {
 	if buf, err = a.compress(b); err != nil {
 		return errors.Wrap("anvil: error compressing data", err)
 	}
-	defer buf.Free()
+	defer buf.Reset()
 
 	size := sections(uint(buf.Len()))
 
@@ -223,8 +223,9 @@ func (a *file) Write(x, z uint8, b []byte) (err error) {
 		}
 
 		method := buf.compress
-		buf.Free()
-		buf.Write([]byte{0})
+		buf.Reset()
+
+		buf.AppendBytes([]byte{0})
 		buf.CompressMethod(method | externalMask)
 		size = 1
 	}

@@ -14,30 +14,30 @@ func TestBuffer(t *testing.T) { is.SuiteP(t, &bufferTest{}) }
 
 func (b *bufferTest) TestBufferWrite(is is.Is) {
 	buf := buffer{}
-	defer buf.Free()
+	defer buf.Reset()
 
 	data := []byte{1, 2, 3, 4}
 	expected := data
-	n, _ := buf.Write(data)
+	n := buf.AppendBytes(data)
 	is(n == len(data), "Write returned an incorrect number of bytes")
 	is.Equal(buf.buf[0][5:buf.length], expected, "incorrect internal state")
 
 	expected = append(data, data...)
-	n, _ = buf.Write(data)
+	n = buf.AppendBytes(data)
 	is(n == len(data), "Write returned an incorrect number of bytes")
 	is.Equal(buf.buf[0][5:buf.length], expected, "incorrect internal state")
 }
 
 func (b *bufferTest) TestBufferWriteLarge(is is.Is) {
 	buf := buffer{}
-	defer buf.Free()
+	defer buf.Reset()
 	byteBuffer := bytes.Buffer{}
 
 	data := section{}
 	b.setAllSection(&data, 1)
 
 	expected := append([]byte(nil), data[:]...)
-	n, _ := buf.Write(data[:])
+	n := buf.AppendBytes(data[:])
 	is(n == len(data), "Write returned an incorrect number of bytes")
 	err := buf.WriteTo(&byteBuffer, false)
 	is(err == nil, "unexpected error: %s", err)
@@ -46,7 +46,7 @@ func (b *bufferTest) TestBufferWriteLarge(is is.Is) {
 	b.setAllSection(&data, 2)
 	byteBuffer.Reset()
 	expected = append(expected, data[:]...)
-	n, _ = buf.Write(data[:])
+	n = buf.AppendBytes(data[:])
 	is(n == len(data), "Write returned an incorrect number of bytes")
 	err = buf.WriteTo(&byteBuffer, false)
 	is(err == nil, "unexpected error: %s", err)
@@ -60,18 +60,17 @@ func (b *bufferTest) TestHeader(is is.Is) {
 	testData := []byte{0}
 	bytes := bytes.Buffer{}
 
-	_, err := buf.Write(testData)
-	is(err == nil, "unexpected error: %s", err)
-	err = buf.WriteTo(&bytes, true)
+	buf.AppendBytes(testData)
+	err := buf.WriteTo(&bytes, true)
 	is(err == nil, "unexpected error: %s", err)
 	written := bytes.Bytes()
 	is(u32(written) == uint32(len(testData))+1, "incorrect length written")
 	is(written[4] == byte(DefaultCompression), "incorrect compression method written")
 
-	buf.Free()
+	buf.Reset()
 	bytes.Reset()
 
-	_, err = buf.Write(testData)
+	buf.AppendBytes(testData)
 	is(err == nil, "unexpected error: %s", err)
 	buf.CompressMethod(CompressionGzip)
 	err = buf.WriteTo(&bytes, true)
@@ -90,7 +89,7 @@ func (b *bufferTest) setAllSection(s *section, v byte) {
 
 func (b *bufferTest) TestBufferLength(is is.Is) {
 	buf := buffer{}
-	defer buf.Free()
+	defer buf.Reset()
 
 	is(buf.Len() == 0, "buffer returned incorrect length")
 	_, err := buf.Write([]byte{})
