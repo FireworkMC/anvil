@@ -37,7 +37,7 @@ func openFile(path string, settings Settings) (r reader, size int64, err error) 
 		fileSize = info.Size()
 	}
 
-	var fileFlags = os.O_RDWR | os.O_CREATE
+	var fileFlags = os.O_CREATE
 
 	if settings.Sync {
 		fileFlags |= os.O_SYNC
@@ -48,6 +48,8 @@ func openFile(path string, settings Settings) (r reader, size int64, err error) 
 			return
 		}
 		fileFlags = os.O_RDONLY
+	} else {
+		fileFlags |= os.O_RDWR
 	}
 
 	var f afero.File
