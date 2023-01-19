@@ -77,7 +77,9 @@ func (h *Header) Set(x, z uint8, c Entry) error {
 
 	old := h.Get(x, z)
 	if old.Exists() {
-		h.freeSpace(old)
+		if err := h.freeSpace(old); err != nil {
+			return err
+		}
 	}
 
 	if err := h.markSpace(c); err != nil {

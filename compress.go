@@ -79,7 +79,7 @@ func (c CompressMethod) decompressor(src io.ReadCloser) (reader io.ReadCloser, e
 	case CompressionNone:
 		reader = io.NopCloser(src)
 	default:
-		err = errors.Error("unsupported compression method")
+		err = errors.New("unsupported compression method")
 	}
 	return reader, errors.Wrap("anvil: unable to decompress", err)
 }
@@ -96,7 +96,7 @@ func (c CompressMethod) compressor() (compressor, error) {
 	case CompressionNone:
 		return &noopCompressor{}, nil
 	default:
-		return nil, errors.Error("anvil: unsupported compression method")
+		return nil, errors.New("anvil: unsupported compression method")
 	}
 }
 

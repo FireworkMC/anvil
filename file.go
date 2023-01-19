@@ -107,7 +107,7 @@ func newAnvil(rgx, rgz int32, r io.ReaderAt, fileSize int64, settings Settings) 
 		anvil.read = closer
 	} else {
 		if !settings.ReadOnly {
-			return nil, errors.Error("anvil: ReadFile: `r` must implement io.Closer to be opened in write mode")
+			return nil, errors.New("anvil: ReadFile: `r` must implement io.Closer to be opened in write mode")
 		}
 		anvil.read = &readAtCloser{ReaderAt: r}
 	}
@@ -116,7 +116,7 @@ func newAnvil(rgx, rgz int32, r io.ReaderAt, fileSize int64, settings Settings) 
 		var canWrite bool
 		anvil.write, canWrite = r.(writer)
 		if !canWrite {
-			return nil, errors.Error("anvil: ReadFile: `r` must implement anvil.Writer to be opened in write mode")
+			return nil, errors.New("anvil: ReadFile: `r` must implement anvil.Writer to be opened in write mode")
 		}
 	}
 

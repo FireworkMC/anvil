@@ -66,7 +66,7 @@ func (f *fileTest) testFile(is is.Is, tfs afero.Fs) func(x, z int) {
 
 		f, err := cache.get(int32(x>>5), int32(z>>5))
 		is(err == nil, "unexpected error")
-		defer cache.free(f)
+		defer func() { is(cache.free(f) == nil, "unable to free file") }()
 
 		if errors.Is(fileErr, os.ErrNotExist) && errors.Is(cacheErr, ErrNotExist) {
 			return

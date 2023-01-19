@@ -89,7 +89,12 @@ type Anvil struct {
 func (a *Anvil) Read(entryX, entryZ int32, read io.ReaderFrom) (n int64, err error) {
 	var f *file
 	if f, err = a.get(entryX>>5, entryZ>>5); err == nil {
-		defer a.free(f)
+		defer func() {
+			if closeErr := a.free(f); closeErr != nil && err != nil {
+				err = closeErr
+			}
+		}()
+
 		n, err = f.Read(uint8(entryX&0x1f), uint8(entryZ&0x1f), read)
 	}
 	return
@@ -99,7 +104,12 @@ func (a *Anvil) Read(entryX, entryZ int32, read io.ReaderFrom) (n int64, err err
 func (a *Anvil) Write(entryX, entryZ int32, p []byte) (err error) {
 	var f *file
 	if f, err = a.get(entryX>>5, entryZ>>5); err == nil {
-		defer a.free(f)
+		defer func() {
+			if closeErr := a.free(f); closeErr != nil && err != nil {
+				err = closeErr
+			}
+		}()
+
 		err = f.Write(uint8(entryX&0x1f), uint8(entryZ&0x1f), p)
 	}
 	return
@@ -109,7 +119,12 @@ func (a *Anvil) Write(entryX, entryZ int32, p []byte) (err error) {
 func (a *Anvil) Info(entryX, entryZ int32) (entry Entry, exists bool, err error) {
 	var f *file
 	if f, err = a.get(entryX>>5, entryZ>>5); err == nil {
-		defer a.free(f)
+		defer func() {
+			if closeErr := a.free(f); closeErr != nil && err != nil {
+				err = closeErr
+			}
+		}()
+
 		entry, exists = f.Info(uint8(entryX&0x1f), uint8(entryZ&0x1f))
 	}
 	return

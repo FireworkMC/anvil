@@ -8,8 +8,6 @@ import (
 	"github.com/yehan2002/is/v2"
 )
 
-var zeroHeader [entryHeaderSize]byte
-
 type bufferTest struct{}
 
 func TestBuffer(t *testing.T) { is.SuiteP(t, &bufferTest{}) }
@@ -41,7 +39,8 @@ func (b *bufferTest) TestBufferWriteLarge(is is.Is) {
 	expected := append([]byte(nil), data[:]...)
 	n, _ := buf.Write(data[:])
 	is(n == len(data), "Write returned an incorrect number of bytes")
-	buf.WriteTo(&byteBuffer, false)
+	err := buf.WriteTo(&byteBuffer, false)
+	is(err == nil, "unexpected error: %s", err)
 	is.Equal(byteBuffer.Bytes(), expected[:], "incorrect bytes written")
 
 	b.setAllSection(&data, 2)
@@ -49,7 +48,8 @@ func (b *bufferTest) TestBufferWriteLarge(is is.Is) {
 	expected = append(expected, data[:]...)
 	n, _ = buf.Write(data[:])
 	is(n == len(data), "Write returned an incorrect number of bytes")
-	buf.WriteTo(&byteBuffer, false)
+	err = buf.WriteTo(&byteBuffer, false)
+	is(err == nil, "unexpected error: %s", err)
 	is.Equal(byteBuffer.Bytes(), expected[:], "incorrect bytes written")
 }
 
@@ -60,8 +60,10 @@ func (b *bufferTest) TestHeader(is is.Is) {
 	testData := []byte{0}
 	bytes := bytes.Buffer{}
 
-	buf.Write(testData)
-	buf.WriteTo(&bytes, true)
+	_, err := buf.Write(testData)
+	is(err == nil, "unexpected error: %s", err)
+	err = buf.WriteTo(&bytes, true)
+	is(err == nil, "unexpected error: %s", err)
 	written := bytes.Bytes()
 	is(u32(written) == uint32(len(testData))+1, "incorrect length written")
 	is(written[4] == byte(DefaultCompression), "incorrect compression method written")
@@ -69,9 +71,11 @@ func (b *bufferTest) TestHeader(is is.Is) {
 	buf.Free()
 	bytes.Reset()
 
-	buf.Write(testData)
+	_, err = buf.Write(testData)
+	is(err == nil, "unexpected error: %s", err)
 	buf.CompressMethod(CompressionGzip)
-	buf.WriteTo(&bytes, true)
+	err = buf.WriteTo(&bytes, true)
+	is(err == nil, "unexpected error: %s", err)
 	written = bytes.Bytes()
 	is.Equal(u32(written), uint32(len(testData))+1, "incorrect length written")
 	is.Equal(written[4], byte(CompressionGzip), "incorrect compression method written")
@@ -89,8 +93,10 @@ func (b *bufferTest) TestBufferLength(is is.Is) {
 	defer buf.Free()
 
 	is(buf.Len() == 0, "buffer returned incorrect length")
-	buf.Write([]byte{})
+	_, err := buf.Write([]byte{})
+	is(err == nil, "unexpected error: %s", err)
 	is(buf.Len() == 0, "buffer returned incorrect length")
-	buf.Write([]byte{1})
+	_, err = buf.Write([]byte{1})
+	is(err == nil, "unexpected error: %s", err)
 	is(buf.Len() == 6, "buffer returned incorrect length")
 }

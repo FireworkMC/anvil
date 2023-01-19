@@ -32,7 +32,11 @@ func TestWriteNewLarge(t *testing.T) {
 	sections := [16][]byte{}
 	for i := range sections {
 		buf := make([]byte, SectionSize*16)
-		rand.Read(buf)
+		_, err := rand.Read(buf)
+		if err != nil {
+			t.Fatal(err)
+		}
+
 		sections[i] = buf
 	}
 	for _, method := range compressionMethods {
@@ -41,7 +45,11 @@ func TestWriteNewLarge(t *testing.T) {
 }
 
 func TestWriteExternal(t *testing.T) {
-	filesystem.MkdirAll("test-write-external", 0o777)
+	err := filesystem.MkdirAll("test-write-external", 0o777)
+	if err != nil {
+		t.Fatal("unable to make test directory.", err)
+	}
+
 	fs := afero.NewBasePathFs(filesystem, "test-write-external")
 	c, err := OpenFs(fs)
 	if err != nil {
@@ -111,19 +119,20 @@ func testRoundtrip(is is.Is, cm CompressMethod, name string, sections [][]byte) 
 	f, err := ReadAnvil(0, 0, memFile, 0, nil, Settings{})
 	is(err == nil, "unexpected error occurred while creating anvil file: %s", err)
 
-	f.CompressionMethod(cm)
+	err = f.CompressionMethod(cm)
+	is(err == nil, "unable to set compression method")
 
 	var bb bytes.Buffer
 
 	for i, buf := range sections {
-		f.Write(uint8(i&0x1f), uint8(i>>5), buf)
+		err = f.Write(uint8(i&0x1f), uint8(i>>5), buf)
+		is(err == nil, "unexpected error")
 
 		n, err := f.(*file).write.(io.Seeker).Seek(0, io.SeekEnd)
 		is(err == nil, "unexpected error")
 		is(n&sectionSizeMask == 0, "file size is not a multiple of `sectionSize`: %d", n)
 
-		n, err = f.Read(uint8(i&0x1f), uint8(i>>5), &bb)
-		is(err == nil, "failed to read data: %s", err)
+		_, err = f.Read(uint8(i&0x1f), uint8(i>>5), &bb)
 		is(err == nil, "failed to read data: %s", err)
 		is(bytes.Equal(buf, bb.Bytes()), "incorrect value read")
 		bb.Reset()
