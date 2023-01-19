@@ -14,9 +14,9 @@ type reader interface {
 	io.Closer
 }
 
-type readAtCloser struct{ io.ReaderAt }
+type noopReadAtCloser struct{ io.ReaderAt }
 
-func (r *readAtCloser) Close() error { return nil }
+func (r *noopReadAtCloser) Close() error { return nil }
 
 // writer a writer to modify an anvil file.
 type writer interface {
@@ -28,33 +28,29 @@ type writer interface {
 var _ writer = afero.File(nil)
 
 func openFile(path string, settings Settings) (r reader, size int64, err error) {
-	var fileSize int64
-	if info, err := settings.fs.Stat(path); err != nil {
-		if !os.IsNotExist(err) {
-			return nil, 0, err
-		}
-	} else {
-		fileSize = info.Size()
-	}
+	var fileFlags int
 
-	var fileFlags = os.O_CREATE
+	if settings.ReadOnly {
+		fileFlags = os.O_RDONLY
+	} else {
+		fileFlags = os.O_RDWR | os.O_CREATE
+	}
 
 	if settings.Sync {
 		fileFlags |= os.O_SYNC
-	}
-
-	if settings.ReadOnly {
-		if fileSize == 0 {
-			return
-		}
-		fileFlags = os.O_RDONLY
-	} else {
-		fileFlags |= os.O_RDWR
 	}
 
 	var f afero.File
 	if f, err = settings.fs.OpenFile(path, fileFlags, 0666); err != nil {
 		return nil, 0, errors.Wrap("anvil: unable to open file", err)
 	}
+
+	var fileSize int64
+	if info, err := f.Stat(); err != nil {
+		return nil, 0, errors.Wrap("anvil: unable to stat file", err)
+	} else {
+		fileSize = info.Size()
+	}
+
 	return f, fileSize, nil
 }
