@@ -142,8 +142,8 @@ github.com/stretchr/testify v1.5.1/go.mod h1:5W2xD1RspED5o8YsWQXVCued0rvSQ+mT+I5
 github.com/stretchr/testify v1.7.0/go.mod h1:6Fq8oRcR53rry900zMqJjRRixrwX3KX962/h/Wwjteg=
 github.com/yehan2002/errors v1.5.3 h1:NnfrRdDCS848shW9ssPk1/mAn4+vzGTft+k42JYU6/k=
 github.com/yehan2002/errors v1.5.3/go.mod h1:qYwLUY0Z1evFblp4Z2tS1S0t2jGCvhgK8umXrsn5acQ=
-github.com/yehan2002/fastbytes/v2 v2.0.6 h1:LwKz0VVK8z31EF/BXd1GP10NDdqXljY6TvnXAp9BLJw=
-github.com/yehan2002/fastbytes/v2 v2.0.6/go.mod h1:XyRAkxJoMZp6U2ZwSScJZKjDaFhvZEGJtYAPWO5WrgI=
+github.com/yehan2002/fastbytes/v2 v2.3.0 h1:vS5GEvXdOkxiYhsnf4OVn8DuMb0qDFpK3wCduw0cUa4=
+github.com/yehan2002/fastbytes/v2 v2.3.0/go.mod h1:4RhSWhTS0wtsNgOBdADGLkUkeUSqv+gILPWiI6x+Vz4=
 github.com/yehan2002/is/v2 v2.3.0 h1:R85u/quN/Nv/f9S9Tc8w3tCMqbrTwXQf5gMI9/uPDq0=
 github.com/yehan2002/is/v2 v2.3.0/go.mod h1:fM/g30H+dzFKcs9LyTOnCcjf7ZexiUTUAWUCWVw2on0=
 github.com/yuin/goldmark v1.1.25/go.mod h1:3hX8gzYuyVAZsxl0MRgGTJEmQBFcNTphYh9decYSb74=
