@@ -45,12 +45,10 @@ func openFile(path string, settings Settings) (r reader, size int64, err error) 
 		return nil, 0, errors.Wrap("anvil: unable to open file", err)
 	}
 
-	var fileSize int64
-	if info, err := f.Stat(); err != nil {
+	info, err := f.Stat()
+	if err != nil {
 		return nil, 0, errors.Wrap("anvil: unable to stat file", err)
-	} else {
-		fileSize = info.Size()
 	}
 
-	return f, fileSize, nil
+	return f, info.Size(), nil
 }
