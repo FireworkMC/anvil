@@ -5,6 +5,7 @@ import (
 	"io"
 	"os"
 	"path/filepath"
+	"runtime"
 	"sync"
 
 	lru "github.com/hashicorp/golang-lru/simplelru"
@@ -137,7 +138,10 @@ func (a *Anvil) File(rgX, rgZ int32) (f File, err error) {
 	if err != nil {
 		return nil, err
 	}
-	return &cachedFile{file: c}, nil
+	cf := &cachedFile{file: c}
+
+	runtime.SetFinalizer(cf, func(c *cachedFile) { c.Close() })
+	return cf, nil
 }
 
 // get gets the anvil get for the given coords
