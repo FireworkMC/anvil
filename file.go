@@ -18,10 +18,19 @@ import (
 // File is a single anvil file.
 // All functions can be called concurrently from multiple goroutines.
 type File interface {
-	// Read reads the entry at x,z to the given `reader`.
+	// Read reads the content of the entry at the given coordinates to a
+	// a byte slice and returns it.
+	Read(x, z uint8) (buf []byte, err error)
+
+	// ReadTo reads the entry at x,z to the given [io.ReaderFrom].
 	// `reader` must not retain the [io.Reader] passed to it.
 	// `reader` must not return before reading has completed.
-	Read(x, z uint8, reader io.ReaderFrom) (n int64, err error)
+	ReadTo(x, z uint8, reader io.ReaderFrom) (n int64, err error)
+
+	// ReadWith reads the entry at x,z to using the given readFn.
+	// `readFn` must not retain the [io.Reader] passed to it.
+	// `readFn` must not return before reading has completed.
+	ReadWith(x, z uint8, readFn func(io.Reader) error) (err error)
 
 	// Write updates the data for the entry at x,z to the given buffer.
 	// The given buffer is compressed and written to the anvil file.
@@ -53,9 +62,9 @@ type file struct {
 
 	settings Settings
 
-	size  int64
-	write writer
-	read  reader
+	size   int64
+	writer writer
+	reader reader
 
 	c  compressor
 	cm CompressMethod
@@ -104,17 +113,17 @@ func newAnvil(rgx, rgz int32, r io.ReaderAt, fileSize int64, settings Settings) 
 	anvil := &file{settings: settings, pos: pos{x: rgx, z: rgz}, size: fileSize}
 
 	if closer, ok := r.(reader); ok {
-		anvil.read = closer
+		anvil.reader = closer
 	} else {
 		if !settings.ReadOnly {
 			return nil, errors.New("anvil: ReadFile: `r` must implement io.Closer to be opened in write mode")
 		}
-		anvil.read = &noopReadAtCloser{ReaderAt: r}
+		anvil.reader = &noopReadAtCloser{ReaderAt: r}
 	}
 
 	if !settings.ReadOnly {
 		var canWrite bool
-		anvil.write, canWrite = r.(writer)
+		anvil.writer, canWrite = r.(writer)
 		if !canWrite {
 			return nil, errors.New("anvil: ReadFile: `r` must implement anvil.Writer to be opened in write mode")
 		}
@@ -135,29 +144,87 @@ func newAnvil(rgx, rgz int32, r io.ReaderAt, fileSize int64, settings Settings) 
 	return anvil, nil
 }
 
-// Read reads the entry at x,z to the given `reader`.
-// `reader` must not retain the [io.Reader] passed to it.
-// `reader` must not return before reading has completed.
-func (a *file) Read(x, z uint8, reader io.ReaderFrom) (n int64, err error) {
-	if x > 31 || z > 31 {
-		return 0, fmt.Errorf("anvil: invalid chunk position")
-	}
-
+// Read reads the content of the entry at the given coordinates to a
+// a byte slice and returns it.
+func (a *file) Read(x, z uint8) (buf []byte, err error) {
 	a.mux.RLock()
 	defer a.mux.RUnlock()
 
+	src, length, err := a.read(x, z)
+	if err != nil {
+		return nil, err
+	}
+
+	buf, err = io.ReadAll(src)
+	if len(buf) < int(length) {
+		// err = fmt.Errorf("anvil: expected to read %d bytes read %d bytes", length, len(buf))
+	}
+
+	closeErr := src.Close()
+	if err == nil {
+		err = closeErr
+	}
+
+	if err != nil {
+		return nil, err
+	}
+
+	return buf, nil
+}
+
+type readFromWrapper struct {
+	fn func(io.Reader) error
+}
+
+func (r *readFromWrapper) ReadFrom(src io.Reader) (n int64, err error) {
+	return -1, r.fn(src)
+}
+
+// Read reads the entry at x,z to using the given readFn.
+// `readFn` must not retain the [io.Reader] passed to it.
+// `readFn` must not return before reading has completed.
+func (a *file) ReadWith(x, z uint8, readFn func(io.Reader) error) (err error) {
+	_, err = a.ReadTo(x, z, &readFromWrapper{fn: readFn})
+	return
+}
+
+// ReadTo reads the entry at x,z to the given [io.ReaderFrom].
+// `reader` must not retain the [io.Reader] passed to it.
+// `reader` must not return before reading has completed.
+func (a *file) ReadTo(x, z uint8, reader io.ReaderFrom) (n int64, err error) {
+	a.mux.RLock()
+	defer a.mux.RUnlock()
+
+	src, _, err := a.read(x, z)
+	if err != nil {
+		return 0, err
+	}
+
+	n, err = reader.ReadFrom(src)
+	closeErr := src.Close()
+	if err == nil {
+		err = closeErr
+	}
+
+	return 0, err
+}
+
+func (a *file) read(x, z uint8) (src io.ReadCloser, length int64, err error) {
+	if x > 31 || z > 31 {
+		return nil, 0, fmt.Errorf("anvil: invalid chunk position")
+	}
+
 	if a.header == nil {
-		return 0, ErrClosed
+		return nil, 0, ErrClosed
 	}
 
 	entry := a.header.Get(x, z)
 
 	if !entry.Exists() {
-		return 0, ErrNotExist
+		return nil, 0, ErrNotExist
 	}
 
 	offset := entry.Offset() * SectionSize
-	var length int64
 	var method CompressMethod
 	var external bool
 
@@ -165,16 +232,12 @@ func (a *file) Read(x, z uint8, reader io.ReaderFrom) (n int64, err error) {
 		var src io.ReadCloser
 		if src, err = a.readerForEntry(x, z, offset, length, external); err == nil {
 			if src, err = method.decompressor(src); err == nil {
-				n, err = reader.ReadFrom(src)
-				closeErr := src.Close()
-				if err == nil {
-					err = closeErr
-				}
+				return src, length, nil
 			}
 		}
 	}
 
-	return 0, err
+	return nil, 0, err
 }
 
 // Write updates the data for the entry at x,z to the given buffer.
@@ -240,10 +303,10 @@ func (a *file) Write(x, z uint8, b []byte) (err error) {
 		}
 	}
 
-	if err = buf.WriteAt(a.write, int64(offset)*SectionSize, true); err != nil {
+	if err = buf.WriteAt(a.writer, int64(offset)*SectionSize, true); err != nil {
 		return errors.Wrap("anvil: unable to write entry data", err)
 	}
-	if err = a.write.Sync(); err != nil {
+	if err = a.writer.Sync(); err != nil {
 		return errors.Wrap("anvil: unable to write entry data", err)
 	}
 
@@ -305,12 +368,12 @@ func (a *file) Close() (err error) {
 	if a.header != nil {
 		a.header.Free()
 		a.header = nil
-		if a.write != nil {
-			if err = a.write.Sync(); err != nil {
+		if a.writer != nil {
+			if err = a.writer.Sync(); err != nil {
 				return
 			}
 		}
-		err = a.read.Close()
+		err = a.reader.Close()
 	}
 
 	return
@@ -320,7 +383,7 @@ func (a *file) Close() (err error) {
 // The reader is only valid until the next call to `Write`
 func (a *file) readerForEntry(x, z uint8, offset, length int64, external bool) (src io.ReadCloser, err error) {
 	if !external {
-		return io.NopCloser(io.NewSectionReader(a.read, offset+entryHeaderSize, length)), nil
+		return io.NopCloser(io.NewSectionReader(a.reader, offset+entryHeaderSize, length)), nil
 	} else if a.settings.fs != nil {
 		entryX, entryZ := a.pos.External(x, z)
 		filename := fmt.Sprintf(a.settings.ChunkFmt, entryX, entryZ)
@@ -336,7 +399,7 @@ func (a *file) readerForEntry(x, z uint8, offset, length int64, external bool) (
 // readEntryHeader reads the header for the given entry.
 func (a *file) readEntryHeader(entry *Entry) (length int64, method CompressMethod, external bool, err error) {
 	header := [entryHeaderSize]byte{}
-	if _, err = a.read.ReadAt(header[:], entry.Offset()*SectionSize); err == nil {
+	if _, err = a.reader.ReadAt(header[:], entry.Offset()*SectionSize); err == nil {
 		// the first 4 bytes in the header holds the length of the data as a big endian uint32
 		length = int64(binary.BigEndian.Uint32(header[:]))
 		// the top bit of the 5th byte of the header indicates if the entry is stored externally
@@ -366,7 +429,7 @@ func (a *file) checkWrite(x, z uint8) error {
 		return ErrClosed
 	}
 
-	if a.write == nil {
+	if a.writer == nil {
 		return ErrReadOnly
 	}
 
@@ -384,7 +447,7 @@ func (a *file) growFile(size uint) (offset uint, err error) {
 
 	offset = sections(uint(fileSize))
 	a.size = int64(offset+size) * SectionSize // insure the file size is a multiple of 4096 bytes
-	err = a.write.Truncate(a.size)
+	err = a.writer.Truncate(a.size)
 	return
 }
 
@@ -416,8 +479,8 @@ func (a *file) updateHeader(x, z uint8, offset uint, size uint8) (err error) {
 func (a *file) writeUint32At(v uint32, offset int64) (err error) {
 	var tmp [4]byte
 	binary.BigEndian.PutUint32(tmp[:], v)
-	if _, err = a.write.WriteAt(tmp[:], offset); err == nil {
-		err = a.write.Sync()
+	if _, err = a.writer.WriteAt(tmp[:], offset); err == nil {
+		err = a.writer.Sync()
 	}
 
 	return

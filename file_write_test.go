@@ -83,7 +83,7 @@ func TestWriteExternal(t *testing.T) {
 		is(err == nil, "unexpected error")
 		// is(n&sectionSizeMask == 0, "file size is not a multiple of `sectionSize`: %d", n)
 
-		_, err = c.Read(int32(i&0x1f), int32(i>>5), &bb)
+		_, err = c.ReadTo(int32(i&0x1f), int32(i>>5), &bb)
 		if (int32(i&0x1f)+int32(i>>5))%2 == 1 {
 			is.Err(err, ErrNotExist, "unexpected state")
 			continue
@@ -100,7 +100,7 @@ func TestWriteExternal(t *testing.T) {
 	}
 
 	for i, buf := range sections {
-		_, err = c.Read(int32(i&0x1f), int32(i>>5), &bb)
+		_, err = c.ReadTo(int32(i&0x1f), int32(i>>5), &bb)
 		if (int32(i&0x1f)+int32(i>>5))%2 == 1 {
 			is.Err(err, ErrNotExist, "unexpected state")
 			continue
@@ -128,12 +128,11 @@ func testRoundtrip(is is.Is, cm CompressMethod, name string, sections [][]byte) 
 		err = f.Write(uint8(i&0x1f), uint8(i>>5), buf)
 		is(err == nil, "unexpected error")
 
-		n, err := f.(*file).write.(io.Seeker).Seek(0, io.SeekEnd)
+		n, err := f.(*file).writer.(io.Seeker).Seek(0, io.SeekEnd)
 		is(err == nil, "unexpected error")
 		is(n&sectionSizeMask == 0, "file size is not a multiple of `sectionSize`: %d", n)
 
-		_, err = f.Read(uint8(i&0x1f), uint8(i>>5), &bb)
-		is(err == nil, "failed to read data: %s", err)
+		readFnTest(is, f, uint8(i&0x1f), uint8(i>>5), &bb)
 		is(bytes.Equal(buf, bb.Bytes()), "incorrect value read")
 		bb.Reset()
 	}
@@ -141,11 +140,34 @@ func testRoundtrip(is is.Is, cm CompressMethod, name string, sections [][]byte) 
 	f, err = ReadAnvil(0, 0, memFile, memFile.Info().Size(), nil, Settings{})
 	is(err == nil, "unexpected error occurred while opening anvil file: %s", err)
 	for i, buf := range sections {
-		_, err = f.Read(uint8(i&0x1f), uint8(i>>5), &bb)
-		is(err == nil, "failed to read data: %s", err)
-		is(err == nil, "failed to read data")
+		readFnTest(is, f, uint8(i&0x1f), uint8(i>>5), &bb)
 		is(bytes.Equal(buf, bb.Bytes()), "incorrect value read")
 		bb.Reset()
 	}
 
+}
+
+// tests if all 3 read functions return the same result
+func readFnTest(is is.Is, f File, x, z uint8, buf *bytes.Buffer) {
+	data, err := f.Read(x, z)
+	is(err == nil, "Read: failed to read data: %s", err)
+
+	var tmpBuf bytes.Buffer
+	tmpBuf.Grow(len(data))
+
+	_, err = f.ReadTo(x, z, &tmpBuf)
+	is(err == nil, "ReadTo: failed to read data: %s", err)
+	is(bytes.Equal(tmpBuf.Bytes(), data), "Read and ReadTo returned different results")
+
+	err = f.ReadWith(x, z, func(r io.Reader) error {
+		tmpBuf.Reset()
+		_, e := tmpBuf.ReadFrom(r)
+		return e
+	})
+
+	is(err == nil, "ReadWith: failed to read data: %s", err)
+	is(bytes.Equal(tmpBuf.Bytes(), data), "Read and ReadWith returned different results")
+
+	buf.Reset()
+	buf.Write(data)
 }

@@ -28,17 +28,42 @@ func (c *cachedFile) Close() (err error) {
 	return
 }
 
-// Read reads the entry at x,z to the given `reader`.
+// Read reads the content of the entry at the given coordinates to a
+// a byte slice and returns it.
+func (c *cachedFile) Read(x, z uint8) (buf []byte, err error) {
+	c.closeMux.RLock()
+	defer c.closeMux.RUnlock()
+	if c.closed {
+		return nil, ErrClosed
+	}
+
+	return c.file.Read(x, z)
+}
+
+// Read reads the entry at x,z to using the given readFn.
+// `readFn` must not retain the [io.Reader] passed to it.
+// `readFn` must not return before reading has completed.
+func (c *cachedFile) ReadWith(x, z uint8, readFn func(io.Reader) error) (err error) {
+	c.closeMux.RLock()
+	defer c.closeMux.RUnlock()
+	if c.closed {
+		return ErrClosed
+	}
+
+	_, err = c.file.ReadTo(x, z, &readFromWrapper{fn: readFn})
+	return
+}
+
+// ReadTo reads the entry at x,z to the given [io.ReaderFrom].
 // `reader` must not retain the [io.Reader] passed to it.
 // `reader` must not return before reading has completed.
-func (c *cachedFile) Read(x, z uint8, reader io.ReaderFrom) (n int64, err error) {
+func (c *cachedFile) ReadTo(x, z uint8, reader io.ReaderFrom) (n int64, err error) {
 	c.closeMux.RLock()
 	defer c.closeMux.RUnlock()
 	if c.closed {
 		return 0, ErrClosed
 	}
-
-	return c.file.Read(x, z, reader)
+	return c.file.ReadTo(x, z, reader)
 }
 
 // Write updates the data for the entry at x,z to the given buffer.

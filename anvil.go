@@ -86,8 +86,9 @@ type Anvil struct {
 	mux sync.RWMutex
 }
 
-// Read reads the chunk data for the given location.
-func (a *Anvil) Read(entryX, entryZ int32, read io.ReaderFrom) (n int64, err error) {
+// Read reads the content of the entry at the given coordinates to a
+// a byte slice and returns it.
+func (a *Anvil) Read(entryX, entryZ int32) (buf []byte, err error) {
 	var f *file
 	if f, err = a.get(entryX>>5, entryZ>>5); err == nil {
 		defer func() {
@@ -96,7 +97,41 @@ func (a *Anvil) Read(entryX, entryZ int32, read io.ReaderFrom) (n int64, err err
 			}
 		}()
 
-		n, err = f.Read(uint8(entryX&0x1f), uint8(entryZ&0x1f), read)
+		buf, err = f.Read(uint8(entryX&0x1f), uint8(entryZ&0x1f))
+	}
+	return
+}
+
+// ReadTo reads the entry at x,z to the given [io.ReaderFrom].
+// `reader` must not retain the [io.Reader] passed to it.
+// `reader` must not return before reading has completed.
+func (a *Anvil) ReadTo(entryX, entryZ int32, reader io.ReaderFrom) (n int64, err error) {
+	var f *file
+	if f, err = a.get(entryX>>5, entryZ>>5); err == nil {
+		defer func() {
+			if closeErr := a.free(f); closeErr != nil && err != nil {
+				err = closeErr
+			}
+		}()
+
+		n, err = f.ReadTo(uint8(entryX&0x1f), uint8(entryZ&0x1f), reader)
+	}
+	return
+}
+
+// ReadFn reads the entry at x,z to using the given readFn.
+// `readFn` must not retain the [io.Reader] passed to it.
+// `readFn` must not return before reading has completed.
+func (a *Anvil) ReadFn(entryX, entryZ int32, readFn func(io.Reader) error) (err error) {
+	var f *file
+	if f, err = a.get(entryX>>5, entryZ>>5); err == nil {
+		defer func() {
+			if closeErr := a.free(f); closeErr != nil && err != nil {
+				err = closeErr
+			}
+		}()
+
+		err = f.ReadWith(uint8(entryX&0x1f), uint8(entryZ&0x1f), readFn)
 	}
 	return
 }

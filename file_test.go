@@ -61,7 +61,7 @@ func (f *fileTest) testFile(is is.Is, tfs afero.Fs) func(x, z int) {
 
 	return func(x, z int) {
 		anvilBuffer := bytes.Buffer{}
-		_, cacheErr := cache.Read(int32(x), int32(z), &anvilBuffer)
+		_, cacheErr := cache.ReadTo(int32(x), int32(z), &anvilBuffer)
 		buf, fileErr := afero.ReadFile(tfs, fmt.Sprintf("chunks/%d.%d.nbt", x, z))
 
 		f, err := cache.get(int32(x>>5), int32(z>>5))

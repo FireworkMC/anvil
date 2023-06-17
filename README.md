@@ -21,7 +21,7 @@ if err != nil{
 }
 
 var buffer bytes.Buffer
-_, err = a.Read(chunkX, chunkZ, &buffer)
+_, err = a.ReadTo(chunkX, chunkZ, &buffer)
 
 // do stuff with the buffer
 
@@ -46,7 +46,7 @@ if err != nil{
 var buffer bytes.Buffer
 // relative coordinates of the chunk data must be used
 // If the chunk exists at chunkX, chunkZ: chunkX % 32, chunkZ % 32 should be used. 
-_, err = f.Read(chunkX%32, chunkZ%32, &buffer)
+_, err = f.ReadTo(chunkX%32, chunkZ%32, &buffer)
 
 
 // do stuff with buffer
