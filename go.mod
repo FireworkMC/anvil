@@ -9,7 +9,7 @@ require (
 	github.com/spf13/afero v1.9.5
 	github.com/yehan2002/errors v1.5.4
 	github.com/yehan2002/fastbytes/v2 v2.3.0
-	github.com/yehan2002/is/v2 v2.3.0
+	github.com/yehan2002/is/v2 v2.4.0
 )
 
 require (
