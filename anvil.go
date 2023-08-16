@@ -8,7 +8,7 @@ import (
 	"runtime"
 	"sync"
 
-	lru "github.com/hashicorp/golang-lru/simplelru"
+	lru "github.com/hashicorp/golang-lru/v2/simplelru"
 	"github.com/spf13/afero"
 	"github.com/yehan2002/errors"
 )
@@ -79,7 +79,7 @@ var defaultSettings = Settings{
 type Anvil struct {
 	inUse map[pos]*file
 
-	lru *lru.LRU
+	lru *lru.LRU[pos, *file]
 
 	settings Settings
 
@@ -194,9 +194,8 @@ func (a *Anvil) get(rgX, rgZ int32) (f *file, err error) {
 
 			if a.lru != nil {
 				// check if the file is in the lru cache
-				if v, ok := a.lru.Get(rg); ok {
+				if f, ok = a.lru.Get(rg); ok {
 					a.lru.Remove(rg)
-					f = v.(*file)
 				}
 			}
 
@@ -242,7 +241,7 @@ func (a *Anvil) free(f *file) (err error) {
 			// We cannot use EvictCallback since there is no way to handle error that occur while closing the file.
 			if a.lru.Len() == a.settings.CacheSize {
 				if _, old, ok := a.lru.RemoveOldest(); ok {
-					if err = old.(*file).Close(); err != nil {
+					if err = old.Close(); err != nil {
 						err = errors.Wrap("anvil.Cache: error occurred while evicting file", err)
 					}
 				}
@@ -289,7 +288,7 @@ func OpenFs(fs afero.Fs, opt ...Settings) (c *Anvil, err error) {
 	cache := Anvil{inUse: map[pos]*file{}, settings: settings}
 
 	if settings.CacheSize > 0 {
-		if cache.lru, err = lru.NewLRU(settings.CacheSize, nil); err != nil {
+		if cache.lru, err = lru.NewLRU[pos, *file](settings.CacheSize, nil); err != nil {
 			return nil, err
 		}
 	}
