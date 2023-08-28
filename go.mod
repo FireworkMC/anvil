@@ -4,7 +4,7 @@ go 1.19
 
 require (
 	github.com/bits-and-blooms/bitset v1.8.0
-	github.com/hashicorp/golang-lru/v2 v2.0.5
+	github.com/hashicorp/golang-lru/v2 v2.0.6
 	github.com/klauspost/compress v1.16.7
 	github.com/spf13/afero v1.9.5
 	github.com/yehan2002/errors v1.5.4
