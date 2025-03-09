@@ -1,6 +1,6 @@
 module github.com/FireworkMC/anvil
 
-go 1.19
+go 1.24
 
 require (
 	github.com/bits-and-blooms/bitset v1.21.0
