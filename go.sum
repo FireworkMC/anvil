@@ -1,7 +1,7 @@
 github.com/bits-and-blooms/bitset v1.21.0 h1:9RlxRbMI5dRNNburKqfDSiz5POfImKgtablyV01WUw0=
 github.com/bits-and-blooms/bitset v1.21.0/go.mod h1:7hO7Gc7Pp1vODcmWvKMRA9BNmbv6a/7QIWpPxHddWR8=
-github.com/google/go-cmp v0.5.9 h1:O2Tfq5qg4qc4AmwVlvv0oLiVAGB7enBSJ2x2DqQFi38=
-github.com/google/go-cmp v0.5.9/go.mod h1:17dUlkBOakJ0+DkrSSNjCkIjxS6bF9zb3elmeNGIjoY=
+github.com/google/go-cmp v0.7.0 h1:wk8382ETsv4JYUZwIsn6YpYiWiBsYLSJiTsyBybVuN8=
+github.com/google/go-cmp v0.7.0/go.mod h1:pXiqmnSA92OHEEa9HXL2W4E7lf9JzCmGVUdgjX3N/iU=
 github.com/hashicorp/golang-lru/v2 v2.0.7 h1:a+bsQ5rvGLjzHuww6tVxozPZFVghXaHOwFs4luLUK2k=
 github.com/hashicorp/golang-lru/v2 v2.0.7/go.mod h1:QeFd9opnmA6QUJc5vARoKUSoFhyfM2/ZepoAG6RGpeM=
 github.com/klauspost/compress v1.17.9 h1:6KIumPrER1LHsvBVuDa0r5xaG0Es51mhhB9BQB2qeMA=
@@ -12,8 +12,8 @@ github.com/yehan2002/errors v1.5.4 h1:P6PTSO5sx2TCpLSIeDlsb27NQuIrKeSrWpS0jM7L1f
 github.com/yehan2002/errors v1.5.4/go.mod h1:qYwLUY0Z1evFblp4Z2tS1S0t2jGCvhgK8umXrsn5acQ=
 github.com/yehan2002/fastbytes/v2 v2.3.0 h1:vS5GEvXdOkxiYhsnf4OVn8DuMb0qDFpK3wCduw0cUa4=
 github.com/yehan2002/fastbytes/v2 v2.3.0/go.mod h1:4RhSWhTS0wtsNgOBdADGLkUkeUSqv+gILPWiI6x+Vz4=
-github.com/yehan2002/is/v2 v2.4.0 h1:0fGQzLdLTLnxRLfJ8cPi13bzOfk4XFCfeQDGXuEL+sI=
-github.com/yehan2002/is/v2 v2.4.0/go.mod h1:fM/g30H+dzFKcs9LyTOnCcjf7ZexiUTUAWUCWVw2on0=
+github.com/yehan2002/is/v2 v2.5.0 h1:9g+DsQ9KkUk3cxgjZaJlg0GY1CHFJPBdGICtpFK2VLk=
+github.com/yehan2002/is/v2 v2.5.0/go.mod h1:/U2ZGGpRXxGu9xuDWv+r1txFZQV/JPRNat5AH8SN1ho=
 golang.org/x/sys v0.29.0 h1:TPYlXGxvx1MGTn2GiZDhnjPA9wZzZeGKHHmKhHYvgaU=
 golang.org/x/sys v0.29.0/go.mod h1:/VUhepiaJMQUp4+oa/7Zr1D23ma6VTLIYjOOTFZPUcA=
 golang.org/x/text v0.21.0 h1:zyQAAkrwaneQ066sspRyJaG9VNi/YJ1NfzcGB3hZ/qo=
