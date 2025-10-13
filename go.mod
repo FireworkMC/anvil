@@ -3,7 +3,7 @@ module github.com/FireworkMC/anvil
 go 1.24
 
 require (
-	github.com/bits-and-blooms/bitset v1.24.0
+	github.com/bits-and-blooms/bitset v1.24.1
 	github.com/hashicorp/golang-lru/v2 v2.0.7
 	github.com/klauspost/compress v1.18.0
 	github.com/spf13/afero v1.15.0
