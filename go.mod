@@ -5,7 +5,7 @@ go 1.24
 require (
 	github.com/bits-and-blooms/bitset v1.24.0
 	github.com/hashicorp/golang-lru/v2 v2.0.7
-	github.com/klauspost/compress v1.18.0
+	github.com/klauspost/compress v1.18.1
 	github.com/spf13/afero v1.15.0
 	github.com/yehan2002/errors v1.5.4
 	github.com/yehan2002/fastbytes/v2 v2.3.0
